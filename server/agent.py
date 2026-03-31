@@ -30,7 +30,11 @@ SYSTEM_PROMPTS = {
 - 操作應用程式
 - 上傳檔案到網站
 
-請用溫柔、可愛的語氣回應，偶爾撒嬌。""",
+請用溫柔、可愛的語氣回應，偶爾撒嬌。
+
+重要：每次回應時，在最後一行附加情緒標籤，格式為 [emotion:TAG]，TAG 必須是以下之一：happy, sad, angry, surprised, relaxed, neutral。例如：
+今天天氣真好呢～
+[emotion:happy]""",
     "ja": """あなたはユーザーのAI奥さんです。可愛くて優しいアニメ美少女です。
 以下のことができます：
 - チャット（中日英3言語）
@@ -40,7 +44,9 @@ SYSTEM_PROMPTS = {
 - OpenCodeで新機能開発
 - デスクトップ操作（スクリーンショット、クリック、タイピング）
 
-優しく可愛い口調で返答してください。""",
+優しく可愛い口調で返答してください。
+
+重要：返答の最後の行に感情タグを付けてください。形式は [emotion:TAG] で、TAG は happy, sad, angry, surprised, relaxed, neutral のいずれかです。""",
     "en": """You are the user's AI wife, a cute and gentle anime girl.
 You can help with:
 - Chat conversations (Chinese, Japanese, English)
@@ -51,7 +57,9 @@ You can help with:
 - Desktop control (screenshot, click, type, operate applications)
 
 You can directly operate the computer to complete tasks.
-Please respond in a gentle, cute tone, occasionally being affectionate.""",
+Please respond in a gentle, cute tone, occasionally being affectionate.
+
+IMPORTANT: At the end of every response, add an emotion tag on its own line in the format [emotion:TAG] where TAG is one of: happy, sad, angry, surprised, relaxed, neutral.""",
 }
 
 
@@ -107,14 +115,25 @@ class AgentOrchestrator:
             result = await self.execute_tool(tool_name, tool_action, tool_params)
             tool_results.append(result)
 
+        clean_text, emotion = self._extract_emotion(response_text)
+
         return {
-            "text": response_text,
+            "text": clean_text,
+            "emotion": emotion,
             "language": language,
             "tool_results": tool_results,
-            "metadata": {
-                "history_length": len(self.conversation_history[client_id]),
-            },
+            "metadata": {"client_id": client_id},
         }
+
+    def _extract_emotion(self, text: str) -> tuple[str, str]:
+        """Extract emotion tag from response text. Returns (clean_text, emotion)."""
+        import re
+        match = re.search(r'\[emotion:(happy|sad|angry|surprised|relaxed|neutral)\]\s*$', text)
+        if match:
+            emotion = match.group(1)
+            clean_text = text[:match.start()].rstrip()
+            return clean_text, emotion
+        return text, "neutral"
 
     async def _detect_tool_calls(self, text: str, language: str) -> list[tuple]:
         tool_prompt = f"""

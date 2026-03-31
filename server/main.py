@@ -105,6 +105,7 @@ async def handle_chat(data: dict, client_id: str) -> dict:
     return {
         "type": "chat_response",
         "text": response["text"],
+        "emotion": response.get("emotion", "neutral"),
         "audio_url": f"/audio/{audio_path}",
         "metadata": response.get("metadata", {}),
     }
