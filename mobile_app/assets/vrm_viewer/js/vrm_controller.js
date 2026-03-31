@@ -167,7 +167,7 @@ function setExpression(name, value) {
 
 // ── Idle animation: breathing ──────────────────────────────────────────────────
 function updateBreathing(delta) {
-  if (!currentVrm || !currentVrm.humanoid) return;
+  if (!idleEnabled || !currentVrm || !currentVrm.humanoid) return;
 
   const chest = currentVrm.humanoid.getNormalizedBoneNode('chest');
   const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
@@ -261,14 +261,42 @@ function animate() {
   renderer.render(scene, camera);
 }
 
+// ── Idle animation control ────────────────────────────────────────────────────
+let idleEnabled = true;
+
+function startIdleAnimation() {
+  idleEnabled = true;
+  startBlink();
+}
+
+function stopIdleAnimation() {
+  idleEnabled = false;
+  stopBlink();
+}
+
+// ── Dispose ───────────────────────────────────────────────────────────────────
+function dispose() {
+  stopIdleAnimation();
+  if (currentVrm) {
+    VRMUtils.deepDispose(currentVrm.scene);
+    scene.remove(currentVrm.scene);
+    currentVrm = null;
+  }
+  controls.dispose();
+  renderer.dispose();
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────────
 window.VrmController = {
   loadModel,
   setExpression,
+  startIdleAnimation,
+  stopIdleAnimation,
   setCameraPosition,
   setAutoRotate,
   setInteraction,
   captureFrame,
+  dispose,
 };
 
 // ── Initialize ─────────────────────────────────────────────────────────────────
