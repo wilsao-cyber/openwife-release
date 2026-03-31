@@ -6,8 +6,8 @@ from typing import List, Optional
 
 class LLMConfig(BaseSettings):
     provider: str = "ollama"
-    base_url: str = "http://localhost:11434"
-    model: str = "qwen2.5:72b"
+    base_url: str = "http://localhost:9090"
+    model: str = "qwen-ultra-long"
     temperature: float = 0.7
     max_tokens: int = 4096
 
