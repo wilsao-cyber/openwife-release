@@ -50,6 +50,10 @@ character:
   animation_enabled: true
   vrm_support: true
 
+vision:
+  model: "llava"
+  change_threshold: 0.3
+
 languages:
   supported:
     - "zh-TW"
