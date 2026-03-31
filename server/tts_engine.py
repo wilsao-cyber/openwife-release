@@ -48,7 +48,7 @@ class TTSEngine:
             logger.warning("GPT-SoVITS not installed, using mock TTS")
             self._model = None
 
-    async def synthesize(self, text: str, language: str = "zh-TW") -> str:
+    async def synthesize(self, text: str, language: str = "zh-TW") -> tuple[str, list[dict]]:
         if not self._model:
             return await self._mock_synthesize(text, language)
 
@@ -76,13 +76,14 @@ class TTSEngine:
                 sf.write(str(output_path), audio_data, self.sample_rate)
 
             logger.info(f"TTS synthesized: {output_filename}")
-            return output_filename
+            visemes = self._generate_visemes_from_audio(str(output_path))
+            return output_filename, visemes
 
         except Exception as e:
             logger.error(f"TTS synthesis failed: {e}")
             return await self._mock_synthesize(text, language)
 
-    async def _mock_synthesize(self, text: str, language: str) -> str:
+    async def _mock_synthesize(self, text: str, language: str) -> tuple[str, list[dict]]:
         import uuid
 
         output_filename = f"{uuid.uuid4()}.wav"
@@ -92,7 +93,46 @@ class TTSEngine:
             f.write(b"")
 
         logger.warning(f"Using mock TTS output: {output_filename}")
-        return output_filename
+        return output_filename, []
+
+    def _generate_visemes_from_audio(self, audio_path: str) -> list[dict]:
+        """Generate simple amplitude-based viseme data from audio file."""
+        try:
+            import wave
+            import struct
+
+            with wave.open(audio_path, 'r') as wf:
+                n_frames = wf.getnframes()
+                framerate = wf.getframerate()
+                raw = wf.readframes(n_frames)
+                samples = struct.unpack(f'<{n_frames}h', raw)
+
+            chunk_size = max(1, framerate // 20)  # ~50ms windows
+            visemes = []
+            mouth_shapes = ['aa', 'oh', 'ee', 'ih', 'ou']
+
+            for i in range(0, len(samples), chunk_size):
+                chunk = samples[i:i + chunk_size]
+                if not chunk:
+                    break
+                amplitude = sum(abs(s) for s in chunk) / len(chunk) / 32768.0
+                time_sec = i / framerate
+
+                if amplitude < 0.02:
+                    continue
+
+                weight = min(1.0, amplitude * 5)
+                shape_idx = (i // chunk_size) % len(mouth_shapes)
+                visemes.append({
+                    'time': round(time_sec, 3),
+                    'viseme': mouth_shapes[shape_idx],
+                    'weight': round(weight, 2),
+                })
+
+            return visemes
+        except Exception as e:
+            logger.warning(f"Viseme generation failed: {e}")
+            return []
 
     def _load_voice_sample(self):
         sample_path = self._get_voice_sample_path()

@@ -2,11 +2,14 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import { LipSyncEngine } from './lip_sync.js';
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let scene, camera, renderer, controls, clock;
 let currentVrm = null;
 let blinkTimeoutId = null;
+
+const lipSync = new LipSyncEngine();
 
 // ── Flutter bridge ─────────────────────────────────────────────────────────────
 function sendToFlutter(type, data) {
@@ -101,6 +104,7 @@ function loadModel(url) {
       VRMUtils.rotateVRM0(vrm);
 
       currentVrm = vrm;
+      lipSync.setVrm(vrm);
       scene.add(vrm.scene);
 
       // Auto-center camera on model
@@ -297,6 +301,8 @@ window.VrmController = {
   setInteraction,
   captureFrame,
   dispose,
+  startLipSync(visemeData) { lipSync.start(visemeData); },
+  stopLipSync() { lipSync.stop(); },
 };
 
 // ── Initialize ─────────────────────────────────────────────────────────────────

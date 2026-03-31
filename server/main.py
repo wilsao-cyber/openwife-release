@@ -20,6 +20,7 @@ from stt_engine import STTEngine
 from agent import AgentOrchestrator
 from websocket_manager import WebSocketManager
 from vrm_manager import VrmManager
+from vision_analyzer import VisionAnalyzer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ tts_engine: Optional[TTSEngine] = None
 stt_engine: Optional[STTEngine] = None
 agent: Optional[AgentOrchestrator] = None
 vrm_manager = VrmManager()
+vision_analyzer = VisionAnalyzer()
 
 
 @app.on_event("startup")
@@ -100,13 +102,14 @@ async def handle_chat(data: dict, client_id: str) -> dict:
 
     response = await agent.chat(message, language, client_id)
 
-    audio_path = await tts_engine.synthesize(response["text"], language)
+    audio_path, visemes = await tts_engine.synthesize(response["text"], language)
 
     return {
         "type": "chat_response",
         "text": response["text"],
         "emotion": response.get("emotion", "neutral"),
         "audio_url": f"/audio/{audio_path}",
+        "visemes": visemes,
         "metadata": response.get("metadata", {}),
     }
 
@@ -118,7 +121,7 @@ async def handle_voice_input(data: dict, client_id: str) -> dict:
     text = await stt_engine.transcribe(audio_file, language)
 
     response = await agent.chat(text, language, client_id)
-    audio_path = await tts_engine.synthesize(response["text"], language)
+    audio_path, visemes = await tts_engine.synthesize(response["text"], language)
 
     return {
         "type": "voice_response",
@@ -188,7 +191,7 @@ async def api_stt(audio: UploadFile = File(...)):
 async def api_tts(data: dict):
     text = data.get("text", "")
     language = data.get("language", config.languages.default)
-    audio_path = await tts_engine.synthesize(text, language)
+    audio_path, _ = await tts_engine.synthesize(text, language)
     return FileResponse(audio_path, media_type="audio/wav")
 
 
@@ -246,6 +249,32 @@ async def delete_vrm(filename: str):
         return {"success": True}
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="VRM not found")
+
+
+@app.post("/api/vision/capture")
+async def vision_capture(image: UploadFile = File(...), language: str = "zh-TW"):
+    image_data = await image.read()
+    result = vision_analyzer.analyze_single(image_data, language)
+    if result.get("text"):
+        audio_path, visemes = await tts_engine.synthesize(result["text"], language)
+        result["audio_url"] = f"/audio/{audio_path}"
+        result["visemes"] = visemes
+    return result
+
+
+@app.post("/api/vision/stream")
+async def vision_stream(image: UploadFile = File(...), previous_hash: str = "", language: str = "zh-TW", context: str = ""):
+    image_data = await image.read()
+    previous_bytes = None
+    result = vision_analyzer.analyze_stream(image_data, previous_bytes, language, context)
+    if result is None:
+        return {"changed": False}
+    if result.get("text"):
+        audio_path, visemes = await tts_engine.synthesize(result["text"], language)
+        result["audio_url"] = f"/audio/{audio_path}"
+        result["visemes"] = visemes
+    result["changed"] = True
+    return result
 
 
 if __name__ == "__main__":
