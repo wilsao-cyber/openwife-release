@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../utils/theme.dart';
+import '../services/vrm_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -14,6 +15,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _ttsProvider = 'cosyvoice';
   bool _autoConnect = true;
   bool _voiceEnabled = true;
+  final VrmService _vrmService = VrmService();
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +65,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               trailing: const Icon(Icons.chevron_right),
               onTap: () {},
             ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: ElevatedButton.icon(
+                onPressed: _changeVrmModel,
+                icon: const Icon(Icons.upload_file),
+                label: const Text('Upload VRM Model'),
+              ),
+            ),
           ]),
           _buildSection('關於', [
             const ListTile(
@@ -74,6 +84,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _changeVrmModel() async {
+    try {
+      final path = await _vrmService.pickAndSaveVrm();
+      if (path != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('VRM 模型已更新: ${path.split('/').last}')),
+        );
+      }
+    } on FormatException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('錯誤: ${e.message}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('上傳失敗: $e')),
+        );
+      }
+    }
   }
 
   Widget _buildSection(String title, List<Widget> children) {

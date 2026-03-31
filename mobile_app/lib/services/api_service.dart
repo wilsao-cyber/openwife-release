@@ -94,6 +94,25 @@ class ApiService extends ChangeNotifier {
     return {};
   }
 
+  Future<Map<String, dynamic>> uploadVrm(String filePath) async {
+    final uri = Uri.parse('$baseUrl/api/vrm/upload');
+    final request = http.MultipartRequest('POST', uri)
+      ..files.add(await http.MultipartFile.fromPath('file', filePath));
+    final response = await request.send();
+    final body = await response.stream.bytesToString();
+    return jsonDecode(body);
+  }
+
+  Future<List<Map<String, dynamic>>> listVrm() async {
+    final response = await http.get(Uri.parse('$baseUrl/api/vrm/list'));
+    final data = jsonDecode(response.body);
+    return List<Map<String, dynamic>>.from(data['models']);
+  }
+
+  Future<void> deleteVrm(String filename) async {
+    await http.delete(Uri.parse('$baseUrl/api/vrm/$filename'));
+  }
+
   void disconnect() {
     _wsChannel?.sink.close();
     _isConnected = false;
