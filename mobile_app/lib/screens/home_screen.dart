@@ -74,6 +74,16 @@ class _HomeTabState extends State<_HomeTab> {
   bool _arSupported = false;
 
   @override
+  void initState() {
+    super.initState();
+    widget.vrmController.events.listen((event) {
+      if (event.type == VrmEventType.arSupported) {
+        setState(() => _arSupported = event.data['supported'] == true);
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
@@ -112,6 +122,12 @@ class _HomeTabState extends State<_HomeTab> {
                         _QuickAction(icon: Icons.email, label: '查看郵件', onTap: () {}),
                         _QuickAction(icon: Icons.calendar_today, label: '今日行程', onTap: () {}),
                         _QuickAction(icon: Icons.search, label: '搜尋資料', onTap: () {}),
+                        if (_arSupported)
+                          _QuickAction(
+                            icon: Icons.view_in_ar,
+                            label: 'AR',
+                            onTap: () => widget.vrmController.enterAR(),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 8),

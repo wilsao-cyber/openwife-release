@@ -3,11 +3,13 @@ import { OrbitControls } from 'three/addons/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { LipSyncEngine } from './lip_sync.js';
+import { ARSession } from './ar_session.js';
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let scene, camera, renderer, controls, clock;
 let currentVrm = null;
 let blinkTimeoutId = null;
+let arSession = null;
 
 const lipSync = new LipSyncEngine();
 
@@ -58,6 +60,13 @@ function initScene() {
   controls.minDistance = 1;
   controls.maxDistance = 5;
   controls.update();
+
+  // AR session
+  arSession = new ARSession(renderer, scene, camera);
+  setTimeout(async () => {
+    const supported = arSession.isSupported;
+    sendToFlutter('arSupported', { supported });
+  }, 1000);
 
   // Resize handler
   window.addEventListener('resize', onResize);
@@ -300,6 +309,17 @@ window.VrmController = {
   setAutoRotate,
   setInteraction,
   captureFrame,
+  async enterAR() {
+    const success = await arSession.enter();
+    if (success) {
+      controls.enabled = false;
+    }
+    return success;
+  },
+  async exitAR() {
+    await arSession.exit();
+    controls.enabled = true;
+  },
   dispose,
   startLipSync(visemeData) { lipSync.start(visemeData); },
   stopLipSync() { lipSync.stop(); },
