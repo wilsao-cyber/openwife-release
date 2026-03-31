@@ -1,7 +1,9 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/vrm_model.dart';
 import '../services/api_service.dart';
+import '../services/vision_service.dart';
 import '../utils/constants.dart';
 import '../utils/theme.dart';
 import '../widgets/voice_input_button.dart';
@@ -73,6 +75,8 @@ class _HomeTab extends StatefulWidget {
 class _HomeTabState extends State<_HomeTab> {
   bool _modelReady = false;
   bool _arSupported = false;
+  VisionService? _visionService;
+  bool _companionMode = false;
 
   @override
   void initState() {
@@ -82,6 +86,59 @@ class _HomeTabState extends State<_HomeTab> {
         setState(() => _arSupported = event.data['supported'] == true);
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _visionService?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggleCompanionMode() async {
+    if (_companionMode) {
+      _visionService?.stopContinuousVision();
+      await _visionService?.dispose();
+      _visionService = null;
+      setState(() => _companionMode = false);
+    } else {
+      _visionService = VisionService(
+        onFrameCaptured: _onVisionFrame,
+      );
+      await _visionService!.initCamera(front: true);
+      _visionService!.startContinuousVision();
+      setState(() => _companionMode = true);
+    }
+  }
+
+  void _onVisionFrame(Uint8List frame) async {
+    final apiService = context.read<ApiService>();
+    try {
+      final result = await apiService.sendVisionStream(
+        frame,
+        Constants.defaultLanguage,
+        '',
+      );
+      if (result['changed'] == true && result['text'] != null) {
+        final emotion = result['emotion'] as String? ?? 'neutral';
+        final expression = VrmExpression.values.firstWhere(
+          (e) => e.name == emotion,
+          orElse: () => VrmExpression.neutral,
+        );
+        widget.vrmController.setExpression(expression);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result['text'])),
+          );
+        }
+
+        Future.delayed(const Duration(seconds: 5), () {
+          widget.vrmController.setExpression(VrmExpression.neutral);
+        });
+      }
+    } catch (e) {
+      debugPrint('Vision stream error: $e');
+    }
   }
 
   @override
@@ -123,6 +180,11 @@ class _HomeTabState extends State<_HomeTab> {
                         _QuickAction(icon: Icons.email, label: '查看郵件', onTap: () {}),
                         _QuickAction(icon: Icons.calendar_today, label: '今日行程', onTap: () {}),
                         _QuickAction(icon: Icons.search, label: '搜尋資料', onTap: () {}),
+                        _QuickAction(
+                          icon: _companionMode ? Icons.visibility : Icons.visibility_off,
+                          label: _companionMode ? '關閉陪伴' : '陪伴模式',
+                          onTap: _toggleCompanionMode,
+                        ),
                         _QuickAction(
                           icon: Icons.camera_alt,
                           label: '合照',

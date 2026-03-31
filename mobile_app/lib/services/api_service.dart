@@ -113,6 +113,31 @@ class ApiService extends ChangeNotifier {
     await http.delete(Uri.parse('$baseUrl/api/vrm/$filename'));
   }
 
+  Future<Map<String, dynamic>> sendVisionCapture(List<int> imageData, String language) async {
+    final uri = Uri.parse('$baseUrl/api/vision/capture');
+    final request = http.MultipartRequest('POST', uri)
+      ..fields['language'] = language
+      ..files.add(http.MultipartFile.fromBytes('image', imageData, filename: 'frame.jpg'));
+    final response = await request.send();
+    final body = await response.stream.bytesToString();
+    return jsonDecode(body);
+  }
+
+  Future<Map<String, dynamic>> sendVisionStream(
+    List<int> imageData,
+    String language,
+    String context,
+  ) async {
+    final uri = Uri.parse('$baseUrl/api/vision/stream');
+    final request = http.MultipartRequest('POST', uri)
+      ..fields['language'] = language
+      ..fields['context'] = context
+      ..files.add(http.MultipartFile.fromBytes('image', imageData, filename: 'frame.jpg'));
+    final response = await request.send();
+    final body = await response.stream.bytesToString();
+    return jsonDecode(body);
+  }
+
   void disconnect() {
     _wsChannel?.sink.close();
     _isConnected = false;
