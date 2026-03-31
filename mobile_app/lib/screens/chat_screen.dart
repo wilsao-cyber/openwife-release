@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import '../models/vrm_model.dart';
 import '../widgets/voice_input_button.dart';
+import 'home_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -25,14 +27,36 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _simulateResponse() {
     Future.delayed(const Duration(seconds: 1), () {
-      setState(() {
-        _messages.add({
-          'role': 'assistant',
-          'content': '老公說的我都有在聽喔～',
-          'timestamp': DateTime.now(),
-        });
-        _isLoading = false;
-      });
+      _handleChatResponse({'text': '老公說的我都有在聽喔～', 'emotion': 'happy'});
+    });
+  }
+
+  void _handleChatResponse(Map<String, dynamic> response) {
+    final text = response['text'] as String? ?? response['content'] as String? ?? '';
+    final emotion = response['emotion'] as String? ?? 'neutral';
+
+    setState(() {
+      _messages.add({'role': 'assistant', 'content': text, 'timestamp': DateTime.now()});
+      _isLoading = false;
+    });
+
+    _setVrmExpression(emotion);
+  }
+
+  void _setVrmExpression(String emotion) {
+    final homeState = context.findAncestorStateOfType<HomeScreenState>();
+    if (homeState == null) return;
+    final expression = VrmExpression.values.firstWhere(
+      (e) => e.name == emotion,
+      orElse: () => VrmExpression.neutral,
+    );
+    homeState.vrmController.setExpression(expression);
+
+    // Reset to neutral after 5 seconds
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) {
+        homeState.vrmController.setExpression(VrmExpression.neutral);
+      }
     });
   }
 
