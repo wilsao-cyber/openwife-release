@@ -19,6 +19,7 @@ from tts_engine import TTSEngine
 from stt_engine import STTEngine
 from agent import AgentOrchestrator
 from websocket_manager import WebSocketManager
+from vrm_manager import VrmManager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ llm_client: Optional[LLMClient] = None
 tts_engine: Optional[TTSEngine] = None
 stt_engine: Optional[STTEngine] = None
 agent: Optional[AgentOrchestrator] = None
+vrm_manager = VrmManager()
 
 
 @app.on_event("startup")
@@ -210,6 +212,39 @@ async def health_check():
             "agent": agent is not None,
         },
     }
+
+
+@app.post("/api/vrm/upload")
+async def upload_vrm(file: UploadFile = File(...)):
+    data = await file.read()
+    try:
+        filename = vrm_manager.save(data, file.filename)
+        return {"filename": filename, "size": len(data)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/vrm/list")
+async def list_vrm():
+    return {"models": vrm_manager.list_models()}
+
+
+@app.get("/vrm/{filename}")
+async def get_vrm(filename: str):
+    try:
+        path = vrm_manager.get_path(filename)
+        return FileResponse(path, media_type="model/gltf-binary")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="VRM not found")
+
+
+@app.delete("/api/vrm/{filename}")
+async def delete_vrm(filename: str):
+    try:
+        vrm_manager.delete(filename)
+        return {"success": True}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="VRM not found")
 
 
 if __name__ == "__main__":
