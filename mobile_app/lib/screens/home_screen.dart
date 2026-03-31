@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/vrm_model.dart';
 import '../services/api_service.dart';
-import '../widgets/voice_input_button.dart';
+import '../utils/constants.dart';
 import '../utils/theme.dart';
+import '../widgets/voice_input_button.dart';
+import '../widgets/vrm_viewer_widget.dart';
 import 'chat_screen.dart';
 import 'email_screen.dart';
 import 'calendar_screen.dart';
@@ -12,19 +15,27 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomeScreen> createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
-    _HomeTab(),
-    ChatScreen(),
-    EmailScreen(),
-    CalendarScreen(),
-    SettingsScreen(),
+  final vrmController = VrmViewerController();
+
+  List<Widget> get _screens => [
+    _HomeTab(vrmController: vrmController),
+    const ChatScreen(),
+    const EmailScreen(),
+    const CalendarScreen(),
+    const SettingsScreen(),
   ];
+
+  @override
+  void dispose() {
+    vrmController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,8 +60,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _HomeTab extends StatelessWidget {
-  const _HomeTab();
+class _HomeTab extends StatefulWidget {
+  final VrmViewerController vrmController;
+
+  const _HomeTab({required this.vrmController});
+
+  @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
+  bool _modelReady = false;
+  bool _arSupported = false;
 
   @override
   Widget build(BuildContext context) {
@@ -60,14 +81,13 @@ class _HomeTab extends StatelessWidget {
           children: [
             Expanded(
               flex: 3,
-              child: Container(
-                color: Colors.black,
-                child: const Center(
-                  child: Text(
-                    'VRM Viewer (coming soon)',
-                    style: TextStyle(color: Colors.white54),
-                  ),
-                ),
+              child: VrmViewerWidget(
+                modelSource: VrmModelSource.asset(Constants.defaultVrmModel),
+                enableInteraction: true,
+                enableIdleAnimation: true,
+                controller: widget.vrmController,
+                onReady: () => setState(() => _modelReady = true),
+                onError: (e) => debugPrint('VRM error: $e'),
               ),
             ),
             Expanded(
