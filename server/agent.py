@@ -4,7 +4,6 @@ import json
 from typing import Optional
 from config import ServerConfig
 from llm_client import LLMClient
-from image_to_3d import ImageTo3D
 from tools import (
     EmailTool,
     CalendarTool,
@@ -61,8 +60,6 @@ class AgentOrchestrator:
         self.llm = llm_client
         self.config = config
         self.conversation_history: dict[str, list] = {}
-
-        self.image_to_3d = ImageTo3D(config.image_to_3d)
 
         self.tools = {
             "email": EmailTool(config.email),
@@ -155,11 +152,6 @@ class AgentOrchestrator:
         except Exception as e:
             logger.error(f"Tool execution failed: {tool_name}.{action}: {e}")
             return {"error": str(e)}
-
-    async def generate_3d_model(self, image_data: bytes) -> str:
-        logger.info("Generating 3D model from image...")
-        model_path = await self.image_to_3d.convert(image_data)
-        return model_path
 
     async def summarize_email(self, email_content: str, language: str = "zh-TW") -> str:
         prompt = f"Summarize this email in {language}:\n{email_content}"

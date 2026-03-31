@@ -189,13 +189,6 @@ async def api_tts(data: dict):
     return FileResponse(audio_path, media_type="audio/wav")
 
 
-@app.post("/api/image-to-3d")
-async def api_image_to_3d(image: UploadFile = File(...)):
-    image_data = await image.read()
-    model_path = await agent.generate_3d_model(image_data)
-    return {"model_url": f"/models/{model_path}"}
-
-
 @app.get("/audio/{filename}")
 async def get_audio(filename: str):
     return FileResponse(f"./output/audio/{filename}")

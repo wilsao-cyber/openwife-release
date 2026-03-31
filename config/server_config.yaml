@@ -21,11 +21,6 @@ stt:
   model: "medium"
   language: "auto"
 
-image_to_3d:
-  provider: "triposr"
-  model_path: "./models/3d/triposr"
-  output_format: "glb"
-
 email:
   provider: "gmail"
   credentials_path: "./config/credentials.json"

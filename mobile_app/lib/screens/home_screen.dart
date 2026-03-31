@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
-import '../widgets/model_viewer_3d.dart';
 import '../widgets/voice_input_button.dart';
 import '../utils/theme.dart';
 import 'chat_screen.dart';
@@ -61,9 +60,14 @@ class _HomeTab extends StatelessWidget {
           children: [
             Expanded(
               flex: 3,
-              child: ModelViewer3D(
-                modelUrl: 'assets/models/character.glb',
-                enableInteraction: true,
+              child: Container(
+                color: Colors.black,
+                child: const Center(
+                  child: Text(
+                    'VRM Viewer (coming soon)',
+                    style: TextStyle(color: Colors.white54),
+                  ),
+                ),
               ),
             ),
             Expanded(

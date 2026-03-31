@@ -70,21 +70,6 @@ class ApiService extends ChangeNotifier {
     return response.bodyBytes;
   }
 
-  Future<String> sendImageTo3D(List<int> imageData) async {
-    final request = http.MultipartRequest(
-      'POST',
-      Uri.parse('$baseUrl/api/image-to-3d'),
-    );
-    request.files.add(http.MultipartFile.fromBytes(
-      'image',
-      imageData,
-      filename: 'character.jpg',
-    ));
-    final response = await request.send();
-    final body = await response.stream.bytesToString();
-    return jsonDecode(body)['model_url'];
-  }
-
   Future<Map<String, dynamic>> sendEmailAction(String action, Map<String, dynamic> params) async {
     sendMessage({'type': 'email_action', 'action': action, 'params': params});
     return {};

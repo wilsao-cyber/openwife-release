@@ -25,12 +25,6 @@ class STTConfig(BaseSettings):
     language: str = "auto"
 
 
-class ImageTo3DConfig(BaseSettings):
-    provider: str = "triposr"
-    model_path: str = "./models/3d/triposr"
-    output_format: str = "glb"
-
-
 class EmailConfig(BaseSettings):
     provider: str = "gmail"
     credentials_path: str = "./config/credentials.json"
@@ -75,7 +69,6 @@ class ServerConfig(BaseSettings):
     llm: LLMConfig = LLMConfig()
     tts: TTSConfig = TTSConfig()
     stt: STTConfig = STTConfig()
-    image_to_3d: ImageTo3DConfig = ImageTo3DConfig()
     email: EmailConfig = EmailConfig()
     calendar: CalendarConfig = CalendarConfig()
     web_search: WebSearchConfig = WebSearchConfig()
