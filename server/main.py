@@ -22,6 +22,9 @@ from agent import AgentOrchestrator
 from websocket_manager import WebSocketManager
 from vrm_manager import VrmManager
 from vision_analyzer import VisionAnalyzer
+from soul.soul_manager import SoulManager
+from memory.memory_store import MemoryStore
+from skills.registry import SkillRegistry
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,7 +40,6 @@ vision_analyzer = VisionAnalyzer()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # --- startup ---
     global llm_client, tts_engine, stt_engine, agent
 
     logger.info("Initializing AI Wife Server...")
@@ -45,7 +47,31 @@ async def lifespan(app: FastAPI):
     llm_client = LLMClient(config.llm)
     tts_engine = TTSEngine(config.tts)
     stt_engine = STTEngine(config.stt)
-    agent = AgentOrchestrator(llm_client, config)
+
+    # Soul system
+    soul_dir = str(config.soul.soul_path).rsplit("/", 1)[0]
+    soul_manager = SoulManager(soul_dir=soul_dir)
+
+    # Memory system
+    memory_store = MemoryStore(
+        db_path=config.memory.db_path,
+        use_embeddings=config.memory.use_embeddings,
+    )
+    await memory_store.initialize()
+
+    # Skill system — auto-discover builtin skills
+    skill_registry = SkillRegistry()
+    skill_registry.discover("skills/builtin")
+    await skill_registry.initialize_all()
+
+    # Wire everything into the agent
+    agent = AgentOrchestrator(
+        llm_client=llm_client,
+        config=config,
+        skill_registry=skill_registry,
+        soul_manager=soul_manager,
+        memory_store=memory_store,
+    )
 
     try:
         await tts_engine.initialize()
@@ -57,24 +83,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"STT engine initialization failed (non-critical): {e}")
 
-    for tool_name, tool in agent.tools.items():
-        if hasattr(tool, "initialize"):
-            try:
-                await tool.initialize()
-            except Exception as e:
-                logger.warning(
-                    f"Tool '{tool_name}' initialization failed (non-critical): {e}"
-                )
-
     logger.info(f"Server running on {config.host}:{config.port}")
 
     yield
 
-    # --- shutdown ---
     logger.info("Shutting down AI Wife Server...")
 
 
-app = FastAPI(title="AI Wife Server", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="AI Wife Server", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,6 +105,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# --- WebSocket ---
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
@@ -109,16 +127,12 @@ async def handle_message(data: dict, client_id: str) -> dict:
         return await handle_chat(data, client_id)
     elif msg_type == "voice_input":
         return await handle_voice_input(data, client_id)
-    elif msg_type == "email_action":
-        return await handle_email_action(data, client_id)
-    elif msg_type == "calendar_action":
-        return await handle_calendar_action(data, client_id)
-    elif msg_type == "web_search":
-        return await handle_web_search(data, client_id)
-    elif msg_type == "file_action":
-        return await handle_file_action(data, client_id)
-    elif msg_type == "opencode_task":
-        return await handle_opencode_task(data, client_id)
+    elif msg_type == "confirm":
+        return {"type": "confirm_started", "message": "Use SSE endpoint for streaming confirmation"}
+    elif msg_type == "deny":
+        language = data.get("language", config.languages.default)
+        result = await agent.deny_plan(client_id, language)
+        return {"type": "denied", **result}
     else:
         return {"type": "error", "message": f"Unknown message type: {msg_type}"}
 
@@ -135,9 +149,11 @@ async def handle_chat(data: dict, client_id: str) -> dict:
         "type": "chat_response",
         "text": response["text"],
         "emotion": response.get("emotion", "neutral"),
+        "mode": response.get("mode", "chat"),
         "audio_url": f"/audio/{audio_path}",
         "visemes": visemes,
-        "metadata": response.get("metadata", {}),
+        "awaiting_confirmation": response.get("awaiting_confirmation", False),
+        "tool_calls": response.get("tool_calls", []),
     }
 
 
@@ -158,52 +174,14 @@ async def handle_voice_input(data: dict, client_id: str) -> dict:
     }
 
 
-async def handle_email_action(data: dict, client_id: str) -> dict:
-    action = data.get("action")
-    params = data.get("params", {})
-    result = await agent.execute_tool("email", action, params)
-    return {"type": "email_result", **result}
-
-
-async def handle_calendar_action(data: dict, client_id: str) -> dict:
-    action = data.get("action")
-    params = data.get("params", {})
-    result = await agent.execute_tool("calendar", action, params)
-    return {"type": "calendar_result", **result}
-
-
-async def handle_web_search(data: dict, client_id: str) -> dict:
-    query = data.get("query", "")
-    result = await agent.execute_tool("web_search", "search", {"query": query})
-    return {"type": "search_result", **result}
-
-
-async def handle_file_action(data: dict, client_id: str) -> dict:
-    action = data.get("action")
-    params = data.get("params", {})
-    result = await agent.execute_tool("file_ops", action, params)
-    return {"type": "file_result", **result}
-
-
-async def handle_opencode_task(data: dict, client_id: str) -> dict:
-    task = data.get("task", "")
-    project_path = data.get("project_path", "./mobile_app")
-    result = await agent.execute_tool(
-        "opencode",
-        "execute",
-        {
-            "task_description": task,
-            "project_path": project_path,
-        },
-    )
-    return {"type": "opencode_result", **result}
-
+# --- Chat API (REST) ---
 
 @app.post("/api/chat")
 async def api_chat(data: dict):
     message = data.get("message", "")
     language = data.get("language", config.languages.default)
-    response = await agent.chat(message, language)
+    client_id = data.get("client_id", "default")
+    response = await agent.chat(message, language, client_id)
     return response
 
 
@@ -211,9 +189,10 @@ async def api_chat(data: dict):
 async def api_chat_stream(data: dict):
     message = data.get("message", "")
     language = data.get("language", config.languages.default)
+    client_id = data.get("client_id", "default")
 
     async def event_generator():
-        async for chunk_json in agent.chat_stream(message, language):
+        async for chunk_json in agent.chat_stream(message, language, client_id):
             yield f"data: {chunk_json}\n\n"
 
     return StreamingResponse(
@@ -222,6 +201,62 @@ async def api_chat_stream(data: dict):
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
+
+# --- Confirmation Flow ---
+
+@app.post("/api/chat/confirm/{client_id}")
+async def confirm_plan(client_id: str):
+    async def event_generator():
+        async for chunk_json in agent.confirm_plan(client_id):
+            yield f"data: {chunk_json}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/chat/deny/{client_id}")
+async def deny_plan(client_id: str, data: dict = {}):
+    language = data.get("language", config.languages.default)
+    return await agent.deny_plan(client_id, language)
+
+
+# --- Memory Management ---
+
+@app.get("/api/memory/list")
+async def list_memories(limit: int = 50):
+    memories = await agent.memory.list_all(limit=limit)
+    return {"memories": memories}
+
+
+@app.delete("/api/memory/{memory_id}")
+async def delete_memory(memory_id: int):
+    await agent.memory.delete(memory_id)
+    return {"success": True}
+
+
+# --- Soul/Personality ---
+
+@app.get("/api/soul")
+async def get_soul():
+    return {
+        "soul": agent.soul.load_soul(),
+        "profile": agent.soul.load_profile(),
+    }
+
+
+@app.put("/api/soul")
+async def update_soul(data: dict):
+    if "soul" in data:
+        agent.soul.update_soul(data["soul"])
+    if "profile" in data:
+        agent.soul.update_profile(data["profile"])
+    return {"success": True}
+
+
+# --- TTS / STT ---
 
 @app.post("/api/stt")
 async def api_stt(audio: UploadFile = File(...)):
@@ -248,6 +283,8 @@ async def get_model(filename: str):
     return FileResponse(f"./output/models/{filename}")
 
 
+# --- Static / Web UI ---
+
 @app.get("/")
 async def web_index():
     return FileResponse("static/index.html", media_type="text/html")
@@ -256,10 +293,13 @@ async def web_index():
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+# --- Health ---
+
 @app.get("/health")
 async def health_check():
     return {
         "status": "healthy",
+        "version": "2.0.0",
         "services": {
             "llm": llm_client is not None,
             "tts": tts_engine is not None,
@@ -269,10 +309,12 @@ async def health_check():
     }
 
 
+# --- Legacy tool endpoints (kept for backward compat) ---
+
 @app.post("/api/email/{action}")
 async def api_email(action: str, data: dict = {}):
     try:
-        result = await agent.execute_tool("email", action, data)
+        result = await agent.skills.execute(f"email_{action}", data)
         return result
     except Exception as e:
         return {"error": str(e), "emails": []}
@@ -281,11 +323,13 @@ async def api_email(action: str, data: dict = {}):
 @app.post("/api/calendar/{action}")
 async def api_calendar(action: str, data: dict = {}):
     try:
-        result = await agent.execute_tool("calendar", action, data)
+        result = await agent.skills.execute(f"calendar_{action}", data)
         return result
     except Exception as e:
         return {"error": str(e), "events": []}
 
+
+# --- VRM ---
 
 @app.post("/api/vrm/upload")
 async def upload_vrm(file: UploadFile = File(...)):
@@ -319,6 +363,8 @@ async def delete_vrm(filename: str):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="VRM not found")
 
+
+# --- Vision ---
 
 @app.post("/api/vision/capture")
 async def vision_capture(image: UploadFile = File(...), language: str = "zh-TW"):

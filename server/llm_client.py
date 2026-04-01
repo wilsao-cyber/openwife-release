@@ -21,24 +21,51 @@ class LLMClient:
     async def chat(
         self,
         messages: list[dict],
+        tools: list[dict] | None = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         stream: bool = False,
-    ) -> str | AsyncGenerator[str, None]:
+        think: bool = True,
+    ) -> str | dict | AsyncGenerator[str, None]:
+        """Chat with the LLM.
+
+        Returns:
+        - str: when no tools provided, returns content string
+        - dict: when tools provided AND LLM returns tool_calls,
+                returns {"content": "...", "tool_calls": [...]}
+        - str: when tools provided but no tool_calls, returns content string
+        - AsyncGenerator: when stream=True
+        """
+        processed_messages = self._apply_think_mode(messages, think)
+
         payload = {
             "model": self.model,
-            "messages": messages,
+            "messages": processed_messages,
             "temperature": temperature or self.config.temperature,
             "max_tokens": max_tokens or self.config.max_tokens,
             "stream": stream,
         }
+        if tools:
+            payload["tools"] = tools
 
         if stream:
             return self._stream_response(payload)
         else:
-            return await self._complete_response(payload)
+            return await self._complete_response(payload, has_tools=tools is not None)
 
-    async def _complete_response(self, payload: dict) -> str:
+    def _apply_think_mode(self, messages: list[dict], think: bool) -> list[dict]:
+        """Add /no_think to system prompt if think=False."""
+        if think:
+            return messages
+        result = []
+        for msg in messages:
+            if msg["role"] == "system":
+                result.append({**msg, "content": msg["content"] + "\n/no_think"})
+            else:
+                result.append(msg)
+        return result
+
+    async def _complete_response(self, payload: dict, has_tools: bool = False) -> str | dict:
         last_error = None
         for attempt in range(self.MAX_RETRIES):
             try:
@@ -48,7 +75,15 @@ class LLMClient:
                 )
                 response.raise_for_status()
                 data = response.json()
-                return data["choices"][0]["message"]["content"]
+                message = data["choices"][0]["message"]
+
+                if has_tools and message.get("tool_calls"):
+                    return {
+                        "content": message.get("content", ""),
+                        "tool_calls": message["tool_calls"],
+                    }
+                return message.get("content", "")
+
             except httpx.HTTPStatusError as e:
                 if e.response.status_code < 500:
                     raise
@@ -87,7 +122,7 @@ class LLMClient:
         prompt = f"""
         Based on this character description, generate a detailed 3D model specification:
         {image_description}
-        
+
         Please provide:
         1. Body proportions and measurements
         2. Hair style, color, and details

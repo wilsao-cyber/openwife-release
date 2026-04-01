@@ -71,6 +71,28 @@ class VisionConfig(BaseSettings):
         env_prefix = "VISION_"
 
 
+class SoulConfig(BaseSettings):
+    soul_path: str = "./server/soul/SOUL.md"
+    profile_path: str = "./server/soul/PROFILE.md"
+
+
+class MemoryConfig(BaseSettings):
+    db_path: str = "./server/memory/memories.db"
+    embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
+    max_memories: int = 1000
+    search_limit: int = 3
+    use_embeddings: bool = True
+
+
+class HeartbeatConfig(BaseSettings):
+    enabled: bool = True
+    config_path: str = "./server/heartbeat/HEARTBEAT.md"
+
+
+class MCPConfig(BaseSettings):
+    servers: List[dict] = []
+
+
 class ServerConfig(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
@@ -85,6 +107,10 @@ class ServerConfig(BaseSettings):
     character: CharacterConfig = CharacterConfig()
     languages: LanguageConfig = LanguageConfig()
     vision: VisionConfig = VisionConfig()
+    soul: SoulConfig = SoulConfig()
+    memory: MemoryConfig = MemoryConfig()
+    heartbeat: HeartbeatConfig = HeartbeatConfig()
+    mcp: MCPConfig = MCPConfig()
 
 
 def load_config(config_path: str = "../config/server_config.yaml") -> ServerConfig:

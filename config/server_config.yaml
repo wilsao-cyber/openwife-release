@@ -61,3 +61,21 @@ languages:
     - "ja"
     - "en"
   default: "zh-TW"
+
+soul:
+  soul_path: "./server/soul/SOUL.md"
+  profile_path: "./server/soul/PROFILE.md"
+
+memory:
+  db_path: "./server/memory/memories.db"
+  embedding_model: "paraphrase-multilingual-MiniLM-L12-v2"
+  max_memories: 1000
+  search_limit: 3
+  use_embeddings: true
+
+heartbeat:
+  enabled: true
+  config_path: "./server/heartbeat/HEARTBEAT.md"
+
+mcp:
+  servers: []
