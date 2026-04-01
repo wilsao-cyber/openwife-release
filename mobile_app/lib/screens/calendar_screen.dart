@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/calendar_event.dart';
+import '../services/api_service.dart';
 import '../utils/theme.dart';
+import '../utils/constants.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -15,18 +19,50 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   List<CalendarEvent> _events = [];
+  String? _error;
+  String _language = Constants.defaultLanguage;
 
   @override
   void initState() {
     super.initState();
     _selectedDay = _focusedDay;
+    _loadLanguageAndEvents();
+  }
+
+  Future<void> _loadLanguageAndEvents() async {
+    final prefs = await SharedPreferences.getInstance();
+    _language = prefs.getString('language') ?? Constants.defaultLanguage;
     _loadEvents();
   }
 
-  void _loadEvents() {
-    setState(() {
-      _events = _getMockEvents();
-    });
+  Future<void> _loadEvents() async {
+    try {
+      final apiService = context.read<ApiService>();
+      final result = await apiService.sendCalendarAction('view_events', {
+        'days_ahead': 60,
+      });
+
+      if (result['error'] != null) {
+        setState(() {
+          _events = _getMockEvents();
+          _error = '使用離線模式';
+        });
+      } else if (result['events'] != null) {
+        setState(() {
+          _events = (result['events'] as List)
+              .map((e) => CalendarEvent.fromJson(e as Map<String, dynamic>))
+              .toList();
+          _error = null;
+        });
+      } else {
+        setState(() => _events = _getMockEvents());
+      }
+    } catch (e) {
+      setState(() {
+        _events = _getMockEvents();
+        _error = Constants.getError('load_failed', _language);
+      });
+    }
   }
 
   List<CalendarEvent> _getMockEvents() {
@@ -64,14 +100,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
       appBar: AppBar(
         title: const Text('Calendar'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: _addEvent,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadEvents),
+          IconButton(icon: const Icon(Icons.add), onPressed: _addEvent),
         ],
       ),
       body: Column(
         children: [
+          if (_error != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Colors.orange.withOpacity(0.2),
+              child: Text(_error!, style: const TextStyle(fontSize: 12, color: Colors.orange)),
+            ),
           TableCalendar<CalendarEvent>(
             firstDay: DateTime.utc(2020, 1, 1),
             lastDay: DateTime.utc(2030, 12, 31),
@@ -89,18 +130,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
             },
             eventLoader: _getEventsForDay,
             calendarStyle: CalendarStyle(
-              todayDecoration: BoxDecoration(
-                color: AppTheme.primaryColor,
-                shape: BoxShape.circle,
-              ),
-              selectedDecoration: BoxDecoration(
-                color: AppTheme.secondaryColor,
-                shape: BoxShape.circle,
-              ),
-              markerDecoration: BoxDecoration(
-                color: AppTheme.accentColor,
-                shape: BoxShape.circle,
-              ),
+              todayDecoration: BoxDecoration(color: AppTheme.primaryColor, shape: BoxShape.circle),
+              selectedDecoration: BoxDecoration(color: AppTheme.secondaryColor, shape: BoxShape.circle),
+              markerDecoration: BoxDecoration(color: AppTheme.accentColor, shape: BoxShape.circle),
             ),
           ),
           const Divider(),
@@ -112,10 +144,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       children: [
                         Icon(Icons.event_note, size: 48, color: AppTheme.textSecondaryColor),
                         const SizedBox(height: 8),
-                        Text(
-                          '這天沒有行程',
-                          style: TextStyle(color: AppTheme.textSecondaryColor),
-                        ),
+                        Text('這天沒有行程', style: TextStyle(color: AppTheme.textSecondaryColor)),
                       ],
                     ),
                   )
@@ -136,14 +165,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => const _AddEventSheet(),
+      builder: (context) => _AddEventSheet(onCreated: _loadEvents),
     );
   }
 }
 
 class _EventCard extends StatelessWidget {
   final CalendarEvent event;
-
   const _EventCard({required this.event});
 
   @override
@@ -152,32 +180,23 @@ class _EventCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: ListTile(
         leading: Container(
-          width: 4,
-          height: 40,
-          decoration: BoxDecoration(
-            color: AppTheme.primaryColor,
-            borderRadius: BorderRadius.circular(2),
-          ),
+          width: 4, height: 40,
+          decoration: BoxDecoration(color: AppTheme.primaryColor, borderRadius: BorderRadius.circular(2)),
         ),
         title: Text(event.title),
         subtitle: Text(
-          '${_formatTime(event.startTime)} - ${_formatTime(event.endTime)}${event.location != null ? ' · ${event.location}' : ''}',
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.delete_outline),
-          onPressed: () {},
+          '${_fmt(event.startTime)} - ${_fmt(event.endTime)}${event.location != null ? ' · ${event.location}' : ''}',
         ),
       ),
     );
   }
 
-  String _formatTime(DateTime time) {
-    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-  }
+  String _fmt(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 }
 
 class _AddEventSheet extends StatefulWidget {
-  const _AddEventSheet();
+  final VoidCallback onCreated;
+  const _AddEventSheet({required this.onCreated});
 
   @override
   State<_AddEventSheet> createState() => _AddEventSheetState();
@@ -187,16 +206,45 @@ class _AddEventSheetState extends State<_AddEventSheet> {
   final _titleController = TextEditingController();
   final _locationController = TextEditingController();
   final _descController = TextEditingController();
-  DateTime _startTime = DateTime.now();
+  bool _saving = false;
+
+  Future<void> _save() async {
+    if (_titleController.text.trim().isEmpty) return;
+    setState(() => _saving = true);
+
+    try {
+      final apiService = context.read<ApiService>();
+      final now = DateTime.now();
+      await apiService.sendCalendarAction('create', {
+        'title': _titleController.text.trim(),
+        'location': _locationController.text.trim(),
+        'description': _descController.text.trim(),
+        'start_time': now.add(const Duration(hours: 1)).toIso8601String(),
+        'end_time': now.add(const Duration(hours: 2)).toIso8601String(),
+      });
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onCreated();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('行程已新增')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('新增失敗: $e')),
+        );
+        setState(() => _saving = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
-        left: 16,
-        right: 16,
-        top: 16,
+        left: 16, right: 16, top: 16,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -206,14 +254,10 @@ class _AddEventSheetState extends State<_AddEventSheet> {
           TextField(controller: _descController, decoration: const InputDecoration(labelText: '描述'), maxLines: 3),
           const SizedBox(height: 16),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('行程已新增')),
-              );
-            },
-            child: const Text('新增行程'),
+            onPressed: _saving ? null : _save,
+            child: _saving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('新增行程'),
           ),
+          const SizedBox(height: 16),
         ],
       ),
     );

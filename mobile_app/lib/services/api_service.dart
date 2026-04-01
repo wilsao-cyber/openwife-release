@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -7,23 +8,97 @@ class ApiService extends ChangeNotifier {
   final String baseUrl;
   WebSocketChannel? _wsChannel;
   bool _isConnected = false;
+  String _currentClientId = '';
+
+  int _reconnectAttempts = 0;
+  static const int _maxReconnectAttempts = 5;
+  Timer? _reconnectTimer;
 
   bool get isConnected => _isConnected;
 
   ApiService({required this.baseUrl});
 
+  Future<void> init(String clientId) async {
+    _currentClientId = clientId;
+    await connectWebSocket(clientId);
+  }
+
   Future<void> connectWebSocket(String clientId) async {
+    _currentClientId = clientId;
+    _reconnectTimer?.cancel();
+
     try {
       final wsUrl = baseUrl.replaceFirst('http', 'ws');
       _wsChannel = WebSocketChannel.connect(
         Uri.parse('$wsUrl/ws/$clientId'),
       );
       _isConnected = true;
+      _reconnectAttempts = 0;
       notifyListeners();
+
+      _listenToMessages();
     } catch (e) {
       debugPrint('WebSocket connection failed: $e');
       _isConnected = false;
+      _scheduleReconnect(clientId);
     }
+  }
+
+  void _listenToMessages() {
+    if (_wsChannel == null) return;
+    _wsChannel!.stream.listen(
+      (event) {
+        try {
+          final data = jsonDecode(event as String) as Map<String, dynamic>;
+          _handleIncomingMessage(data);
+        } catch (e) {
+          debugPrint('Failed to parse WebSocket message: $e');
+        }
+      },
+      onError: (error) {
+        debugPrint('WebSocket error: $error');
+        _onDisconnected();
+      },
+      onDone: () {
+        debugPrint('WebSocket connection closed');
+        _onDisconnected();
+      },
+    );
+  }
+
+  void _handleIncomingMessage(Map<String, dynamic> data) {
+    final type = data['type'] as String?;
+    switch (type) {
+      case 'chat_message':
+      case 'text':
+        break;
+      case 'expression':
+        break;
+      case 'web_search_result':
+        break;
+      default:
+        break;
+    }
+  }
+
+  void _onDisconnected() {
+    _isConnected = false;
+    notifyListeners();
+    if (_reconnectAttempts < _maxReconnectAttempts) {
+      _scheduleReconnect(_currentClientId);
+    }
+  }
+
+  void _scheduleReconnect(String clientId) {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(
+      const Duration(seconds: 3),
+      () {
+        _reconnectAttempts++;
+        debugPrint('Reconnecting... attempt $_reconnectAttempts/$_maxReconnectAttempts');
+        connectWebSocket(clientId);
+      },
+    );
   }
 
   Stream<dynamic> get messageStream {
@@ -71,13 +146,29 @@ class ApiService extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>> sendEmailAction(String action, Map<String, dynamic> params) async {
-    sendMessage({'type': 'email_action', 'action': action, 'params': params});
-    return {};
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/email/$action'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(params),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'error': e.toString(), 'emails': []};
+    }
   }
 
   Future<Map<String, dynamic>> sendCalendarAction(String action, Map<String, dynamic> params) async {
-    sendMessage({'type': 'calendar_action', 'action': action, 'params': params});
-    return {};
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/calendar/$action'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(params),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'error': e.toString(), 'events': []};
+    }
   }
 
   Future<Map<String, dynamic>> sendWebSearch(String query) async {
@@ -139,6 +230,7 @@ class ApiService extends ChangeNotifier {
   }
 
   void disconnect() {
+    _reconnectTimer?.cancel();
     _wsChannel?.sink.close();
     _isConnected = false;
     notifyListeners();

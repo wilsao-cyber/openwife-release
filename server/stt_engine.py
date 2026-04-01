@@ -61,8 +61,8 @@ class STTEngine:
             Path(tmp_path).unlink(missing_ok=True)
 
     async def _mock_transcribe(self, audio_data: bytes) -> str:
-        logger.warning("Using mock STT output")
-        return "這是一個模擬的語音辨識結果"
+        logger.warning("Using mock STT output - Speech recognition service not available")
+        return "[Speech recognition service not available - Whisper not installed]"
 
     async def transcribe_file(
         self, file_path: str, language: Optional[str] = None

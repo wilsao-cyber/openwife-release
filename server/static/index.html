@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Wife</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 100vw; height: 100vh; overflow: hidden;
+    background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif;
+    display: flex; flex-direction: column;
+  }
+
+  /* VRM viewer takes top portion */
+  #vrm-container {
+    flex: 1; position: relative; min-height: 0;
+  }
+  #vrm-container canvas { display: block; width: 100%; height: 100%; }
+  #loading {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #FF69B4; font-size: 16px;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+  }
+  #loading .spinner {
+    width: 40px; height: 40px; border: 3px solid rgba(255,105,180,0.3);
+    border-top-color: #FF69B4; border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading.hidden { display: none; }
+  #error {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #ff4444; font-size: 14px; text-align: center;
+    display: none; padding: 20px;
+  }
+
+  /* Greeting bubble */
+  #greeting {
+    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(255,105,180,0.15); border: 1px solid rgba(255,105,180,0.4);
+    border-radius: 16px; padding: 10px 18px; color: #FFB6C1;
+    font-size: 14px; max-width: 90%; text-align: center;
+    backdrop-filter: blur(8px); display: none;
+    animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+  /* Chat panel */
+  #chat-panel {
+    height: 280px; display: flex; flex-direction: column;
+    background: #16213e; border-top: 1px solid #FF69B4;
+  }
+  #messages {
+    flex: 1; overflow-y: auto; padding: 12px; min-height: 0;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  #messages::-webkit-scrollbar { width: 4px; }
+  #messages::-webkit-scrollbar-thumb { background: #FF69B4; border-radius: 2px; }
+
+  .msg { max-width: 80%; padding: 8px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; word-wrap: break-word; }
+  .msg.user { align-self: flex-end; background: #0f3460; color: #eee; border-bottom-right-radius: 4px; }
+  .msg.ai { align-self: flex-start; background: #2a1f3d; color: #FFB6C1; border-bottom-left-radius: 4px; border: 1px solid rgba(255,105,180,0.2); }
+  .msg.ai .emotion-tag { font-size: 11px; color: #FF69B4; margin-bottom: 2px; }
+  .msg.typing { color: #888; font-style: italic; }
+
+  #input-bar {
+    display: flex; gap: 8px; padding: 10px 12px;
+    background: #0f3460;
+  }
+  #input-bar input {
+    flex: 1; padding: 10px 14px; border-radius: 20px;
+    border: 1px solid rgba(255,105,180,0.4); background: #1a1a2e;
+    color: #eee; font-size: 14px; outline: none;
+  }
+  #input-bar input::placeholder { color: #666; }
+  #input-bar input:focus { border-color: #FF69B4; }
+  #input-bar button {
+    width: 42px; height: 42px; border-radius: 50%;
+    background: #FF69B4; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s;
+  }
+  #input-bar button:hover { background: #ff85c8; }
+  #input-bar button:disabled { background: #555; cursor: not-allowed; }
+  #input-bar button svg { width: 20px; height: 20px; fill: white; }
+</style>
+</head>
+<body>
+
+<div id="vrm-container">
+  <div id="loading"><div class="spinner"></div><span>Loading model...</span></div>
+  <div id="error"></div>
+  <div id="greeting"></div>
+</div>
+
+<div id="chat-panel">
+  <div id="messages"></div>
+  <div id="input-bar">
+    <input type="text" id="chat-input" placeholder="輸入訊息..." autocomplete="off">
+    <button id="send-btn" title="Send">
+      <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./static/js/three.module.min.js",
+    "three/addons/": "./static/js/",
+    "@pixiv/three-vrm": "./static/js/three-vrm.module.min.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/GLTFLoader.js';
+import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+
+// ── VRM Viewer ──────────────────────────────────────────────────────
+const container = document.getElementById('vrm-container');
+const loadingEl = document.getElementById('loading');
+const errorEl = document.getElementById('error');
+
+let scene, camera, renderer, controls, clock;
+let currentVrm = null;
+let idleEnabled = true;
+let nextBlinkTime = 0, blinkEndTime = 0;
+
+function initScene() {
+  clock = new THREE.Clock();
+  scene = new THREE.Scene();
+
+  const aspect = container.clientWidth / container.clientHeight;
+  camera = new THREE.PerspectiveCamera(30, aspect, 0.1, 100);
+  camera.position.set(0, 1.3, 2.5);
+
+  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  container.insertBefore(renderer.domElement, container.firstChild);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight.position.set(1, 2, 1);
+  scene.add(dirLight);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 1.0, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.1;
+  controls.minDistance = 1;
+  controls.maxDistance = 5;
+  controls.update();
+
+  window.addEventListener('resize', () => {
+    const w = container.clientWidth, h = container.clientHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  });
+}
+
+function loadModel(url) {
+  loadingEl.classList.remove('hidden');
+  if (currentVrm) { scene.remove(currentVrm.scene); currentVrm = null; }
+
+  const loader = new GLTFLoader();
+  loader.register(p => new VRMLoaderPlugin(p));
+  loader.load(url, gltf => {
+    const vrm = gltf.userData.vrm;
+    if (!vrm) { showError('No VRM data found'); return; }
+    VRMUtils.rotateVRM0(vrm);
+    currentVrm = vrm;
+    scene.add(vrm.scene);
+
+    // Auto-center
+    const box = new THREE.Box3().setFromObject(vrm.scene);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    controls.target.set(center.x, center.y, center.z);
+    camera.position.set(center.x, center.y + 0.1, center.z + size.y * 1.2);
+    controls.update();
+
+    loadingEl.classList.add('hidden');
+    nextBlinkTime = clock.getElapsedTime() + 1;
+  }, undefined, err => {
+    showError('Failed to load: ' + (err.message || err));
+  });
+}
+
+function showError(msg) {
+  loadingEl.classList.add('hidden');
+  errorEl.textContent = msg;
+  errorEl.style.display = 'block';
+}
+
+const lookAtTarget = new THREE.Vector3(0, 1.3, 10);
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+
+  if (currentVrm) {
+    // Breathing
+    if (idleEnabled && currentVrm.humanoid) {
+      const t = clock.getElapsedTime();
+      const breath = Math.sin(t * 0.8) * 0.04;
+      const sway = Math.sin(t * 0.3) * 0.015;
+      const chest = currentVrm.humanoid.getNormalizedBoneNode('chest');
+      const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
+      const head = currentVrm.humanoid.getNormalizedBoneNode('head');
+      if (chest) { chest.rotation.x = breath; chest.rotation.z = Math.sin(t * 0.25) * 0.005; }
+      if (spine) { spine.rotation.x = breath * 0.6; spine.rotation.z = sway; }
+      if (head) { head.rotation.x = Math.sin(t * 0.5) * 0.02; head.rotation.z = Math.sin(t * 0.4) * 0.01; }
+    }
+
+    // Blink
+    if (idleEnabled && currentVrm.expressionManager) {
+      const t = clock.getElapsedTime();
+      if (t >= blinkEndTime && t >= nextBlinkTime) {
+        currentVrm.expressionManager.setValue('blink', 1.0);
+        blinkEndTime = t + 0.15;
+        nextBlinkTime = t + 2 + Math.random() * 4;
+      } else if (t >= blinkEndTime) {
+        currentVrm.expressionManager.setValue('blink', 0);
+      }
+    }
+
+    if (currentVrm.lookAt) currentVrm.lookAt.lookAt(lookAtTarget);
+    if (currentVrm.expressionManager) currentVrm.expressionManager.update();
+    currentVrm.update(delta);
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// Expression map
+const emotionToExpression = {
+  happy: 'happy', sad: 'sad', angry: 'angry',
+  surprised: 'surprised', relaxed: 'relaxed', neutral: 'neutral'
+};
+
+function setEmotion(emotion) {
+  if (!currentVrm || !currentVrm.expressionManager) return;
+  for (const expr of currentVrm.expressionManager.expressions) {
+    currentVrm.expressionManager.setValue(expr.expressionName, 0);
+  }
+  const name = emotionToExpression[emotion] || 'neutral';
+  if (name !== 'neutral') {
+    currentVrm.expressionManager.setValue(name, 1.0);
+  }
+}
+
+initScene();
+animate();
+loadModel('./static/models/character.vrm');
+
+// ── Chat ────────────────────────────────────────────────────────────
+const messagesEl = document.getElementById('messages');
+const inputEl = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
+const greetingEl = document.getElementById('greeting');
+
+function addMessage(text, isUser, emotion) {
+  const div = document.createElement('div');
+  div.className = `msg ${isUser ? 'user' : 'ai'}`;
+  if (!isUser && emotion && emotion !== 'neutral') {
+    const tag = document.createElement('div');
+    tag.className = 'emotion-tag';
+    tag.textContent = emotion;
+    div.appendChild(tag);
+  }
+  const span = document.createElement('span');
+  span.textContent = text;
+  div.appendChild(span);
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+}
+
+function showGreeting(text) {
+  greetingEl.textContent = text;
+  greetingEl.style.display = 'block';
+  setTimeout(() => { greetingEl.style.display = 'none'; }, 5000);
+}
+
+async function sendMessage() {
+  const text = inputEl.value.trim();
+  if (!text) return;
+  inputEl.value = '';
+  sendBtn.disabled = true;
+
+  addMessage(text, true);
+
+  const typing = document.createElement('div');
+  typing.className = 'msg ai typing';
+  typing.textContent = '思考中...';
+  messagesEl.appendChild(typing);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, user_id: 'web_user' })
+    });
+    const data = await res.json();
+    typing.remove();
+
+    addMessage(data.text, false, data.emotion);
+    showGreeting(data.text.substring(0, 60) + (data.text.length > 60 ? '...' : ''));
+
+    if (data.emotion) setEmotion(data.emotion);
+    // Reset expression after 3s
+    setTimeout(() => setEmotion('neutral'), 3000);
+  } catch (err) {
+    typing.remove();
+    addMessage('連線錯誤: ' + err.message, false);
+  }
+  sendBtn.disabled = false;
+  inputEl.focus();
+}
+
+sendBtn.addEventListener('click', sendMessage);
+inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+
+// Initial greeting
+setTimeout(() => showGreeting('Hello~ 老公今天想做什麼呢？'), 2000);
+</script>
+</body>
+</html>

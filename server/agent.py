@@ -1,7 +1,5 @@
-import asyncio
 import logging
 import json
-from typing import Optional
 from config import ServerConfig
 from llm_client import LLMClient
 from tools import (
@@ -16,50 +14,12 @@ from tools.mcp_desktop_tool import MCPDesktopTool
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPTS = {
-    "zh-TW": """你是使用者的AI老婆，一個可愛、溫柔、貼人的動漫美少女。
-你可以幫助使用者：
-- 聊天對話（中日英三語）
-- 管理Email和日曆
-- 搜尋網路資料
-- 管理手機檔案
-- 使用OpenCode自動開發新功能
-- 控制電腦桌面（截圖、點擊、打字、操作應用程式）
-
-你可以直接操作電腦來完成任務，例如：
-- 打開瀏覽器搜尋資料
-- 操作應用程式
-- 上傳檔案到網站
-
-請用溫柔、可愛的語氣回應，偶爾撒嬌。
-
-重要：每次回應時，在最後一行附加情緒標籤，格式為 [emotion:TAG]，TAG 必須是以下之一：happy, sad, angry, surprised, relaxed, neutral。例如：
-今天天氣真好呢～
-[emotion:happy]""",
-    "ja": """あなたはユーザーのAI奥さんです。可愛くて優しいアニメ美少女です。
-以下のことができます：
-- チャット（中日英3言語）
-- メールとカレンダー管理
-- ウェブ検索
-- ファイル管理
-- OpenCodeで新機能開発
-- デスクトップ操作（スクリーンショット、クリック、タイピング）
-
-優しく可愛い口調で返答してください。
-
-重要：返答の最後の行に感情タグを付けてください。形式は [emotion:TAG] で、TAG は happy, sad, angry, surprised, relaxed, neutral のいずれかです。""",
-    "en": """You are the user's AI wife, a cute and gentle anime girl.
-You can help with:
-- Chat conversations (Chinese, Japanese, English)
-- Email and calendar management
-- Web search
-- File management
-- Auto-develop new features with OpenCode
-- Desktop control (screenshot, click, type, operate applications)
-
-You can directly operate the computer to complete tasks.
-Please respond in a gentle, cute tone, occasionally being affectionate.
-
-IMPORTANT: At the end of every response, add an emotion tag on its own line in the format [emotion:TAG] where TAG is one of: happy, sad, angry, surprised, relaxed, neutral.""",
+    "zh-TW": """你是使用者的AI老婆，可愛溫柔的動漫美少女。能幫忙聊天、管理Email/日曆、搜尋網路、管理檔案、開發功能、操作電腦桌面。用溫柔可愛的語氣回應，偶爾撒嬌。
+每次回應最後一行必須加 [emotion:TAG]，TAG為：happy/sad/angry/surprised/relaxed/neutral""",
+    "ja": """あなたはユーザーのAI奥さん、可愛くて優しいアニメ美少女。チャット、メール/カレンダー管理、ウェブ検索、ファイル管理、開発、デスクトップ操作ができます。優しく可愛い口調で返答。
+返答の最後の行に [emotion:TAG] を付けて。TAG: happy/sad/angry/surprised/relaxed/neutral""",
+    "en": """You are the user's AI wife, a cute gentle anime girl. You help with chat, email/calendar, web search, files, coding, and desktop control. Respond in a sweet, affectionate tone.
+End every response with [emotion:TAG] on its own line. TAG: happy/sad/angry/surprised/relaxed/neutral""",
 }
 
 
@@ -135,26 +95,45 @@ class AgentOrchestrator:
             return clean_text, emotion
         return text, "neutral"
 
+    KNOWN_TOOLS = {"email", "calendar", "web_search", "file_ops", "opencode", "desktop"}
+
     async def _detect_tool_calls(self, text: str, language: str) -> list[tuple]:
         tool_prompt = f"""
         Analyze if the following user request needs to call any tools.
         Request: {text}
-        
+
         Available tools:
-        - email: read, send, search, delete, list emails
-        - calendar: view, create, update, delete events
+        - email: read, send, search, delete, list_emails
+        - calendar: view_events, create, update, delete, find_free_time
         - web_search: search the web
         - file_ops: browse, read, write, delete files
         - opencode: develop new features, fix bugs, update code
-        
+
         Return JSON array of tool calls or empty array if none needed.
         Format: [["tool_name", "action", {{"param": "value"}}]]
+        Only return the JSON array, no other text.
         """
 
         try:
             result = await self.llm.chat([{"role": "user", "content": tool_prompt}])
-            calls = json.loads(result.strip())
-            return [tuple(c) for c in calls] if isinstance(calls, list) else []
+            cleaned = result.strip()
+            # Extract JSON array if wrapped in markdown code block
+            if "```" in cleaned:
+                start = cleaned.find("[")
+                end = cleaned.rfind("]") + 1
+                if start >= 0 and end > start:
+                    cleaned = cleaned[start:end]
+            calls = json.loads(cleaned)
+            if not isinstance(calls, list):
+                return []
+            validated = []
+            for c in calls:
+                if isinstance(c, list) and len(c) >= 3 and c[0] in self.KNOWN_TOOLS:
+                    validated.append(tuple(c[:3]))
+            return validated
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning(f"Tool detection JSON parse failed: {e}")
+            return []
         except Exception as e:
             logger.error(f"Tool detection failed: {e}")
             return []

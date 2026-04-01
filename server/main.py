@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import (
     FastAPI,
     WebSocket,
@@ -25,16 +26,6 @@ from vision_analyzer import VisionAnalyzer
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="AI Wife Server", version="1.0.0")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 ws_manager = WebSocketManager()
 llm_client: Optional[LLMClient] = None
 tts_engine: Optional[TTSEngine] = None
@@ -44,8 +35,9 @@ vrm_manager = VrmManager()
 vision_analyzer = VisionAnalyzer()
 
 
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- startup ---
     global llm_client, tts_engine, stt_engine, agent
 
     logger.info("Initializing AI Wife Server...")
@@ -55,12 +47,47 @@ async def startup():
     stt_engine = STTEngine(config.stt)
     agent = AgentOrchestrator(llm_client, config)
 
+    try:
+        await tts_engine.initialize()
+    except Exception as e:
+        logger.warning(f"TTS engine initialization failed (non-critical): {e}")
+
+    try:
+        await stt_engine.initialize()
+    except Exception as e:
+        logger.warning(f"STT engine initialization failed (non-critical): {e}")
+
+    for tool_name, tool in agent.tools.items():
+        if hasattr(tool, "initialize"):
+            try:
+                await tool.initialize()
+            except Exception as e:
+                logger.warning(
+                    f"Tool '{tool_name}' initialization failed (non-critical): {e}"
+                )
+
     logger.info(f"Server running on {config.host}:{config.port}")
 
+    yield
 
-@app.on_event("shutdown")
-async def shutdown():
+    # --- shutdown ---
     logger.info("Shutting down AI Wife Server...")
+
+
+app = FastAPI(title="AI Wife Server", version="1.0.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8000",
+        "http://localhost:3000",
+        "http://127.0.0.1:8000",
+        "http://10.0.2.2:8000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.websocket("/ws/{client_id}")
@@ -205,6 +232,14 @@ async def get_model(filename: str):
     return FileResponse(f"./output/models/{filename}")
 
 
+@app.get("/")
+async def web_index():
+    return FileResponse("static/index.html", media_type="text/html")
+
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
 @app.get("/health")
 async def health_check():
     return {
@@ -216,6 +251,24 @@ async def health_check():
             "agent": agent is not None,
         },
     }
+
+
+@app.post("/api/email/{action}")
+async def api_email(action: str, data: dict = {}):
+    try:
+        result = await agent.execute_tool("email", action, data)
+        return result
+    except Exception as e:
+        return {"error": str(e), "emails": []}
+
+
+@app.post("/api/calendar/{action}")
+async def api_calendar(action: str, data: dict = {}):
+    try:
+        result = await agent.execute_tool("calendar", action, data)
+        return result
+    except Exception as e:
+        return {"error": str(e), "events": []}
 
 
 @app.post("/api/vrm/upload")

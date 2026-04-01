@@ -7,9 +7,9 @@ from typing import List, Optional
 class LLMConfig(BaseSettings):
     provider: str = "ollama"
     base_url: str = "http://localhost:9090"
-    model: str = "qwen-ultra-long"
+    model: str = "qwen2.5:7b"
     temperature: float = 0.7
-    max_tokens: int = 4096
+    max_tokens: int = 2048
 
 
 class TTSConfig(BaseSettings):
@@ -27,16 +27,17 @@ class STTConfig(BaseSettings):
 
 class EmailConfig(BaseSettings):
     provider: str = "gmail"
-    credentials_path: str = "./config/credentials.json"
-    token_path: str = "./config/token.json"
+    credentials_path: str = "../config/credentials.json"
+    token_path: str = "../config/gmail_token.json"
     refresh_interval: int = 300
 
 
 class CalendarConfig(BaseSettings):
     provider: str = "google_calendar"
-    credentials_path: str = "./config/credentials.json"
-    token_path: str = "./config/token.json"
+    credentials_path: str = "../config/credentials.json"
+    token_path: str = "../config/calendar_token.json"
     refresh_interval: int = 60
+    timezone: str = "Asia/Taipei"
 
 
 class WebSearchConfig(BaseSettings):

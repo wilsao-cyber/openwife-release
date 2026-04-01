@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/constants.dart';
 import '../utils/theme.dart';
 import '../services/vrm_service.dart';
 
@@ -10,12 +12,47 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  String _serverUrl = 'http://192.168.1.100:8000';
+  String _serverUrl = '';
   String _language = 'zh-TW';
   String _ttsProvider = 'cosyvoice';
   bool _autoConnect = true;
   bool _voiceEnabled = true;
   final VrmService _vrmService = VrmService();
+  late TextEditingController _serverUrlController;
+
+  @override
+  void initState() {
+    super.initState();
+    _serverUrlController = TextEditingController();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _serverUrl = prefs.getString('server_url') ?? Constants.serverUrl;
+      _language = prefs.getString('language') ?? 'zh-TW';
+      _ttsProvider = prefs.getString('tts_provider') ?? 'cosyvoice';
+      _autoConnect = prefs.getBool('auto_connect') ?? true;
+      _voiceEnabled = prefs.getBool('voice_enabled') ?? true;
+      _serverUrlController.text = _serverUrl;
+    });
+  }
+
+  Future<void> _saveSetting(String key, dynamic value) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (value is bool) {
+      await prefs.setBool(key, value);
+    } else if (value is String) {
+      await prefs.setString(key, value);
+    }
+  }
+
+  @override
+  void dispose() {
+    _serverUrlController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,12 +61,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         children: [
           _buildSection('伺服器設定', [
-            _buildTextField('伺服器 URL', _serverUrl, (v) => _serverUrl = v),
+            _buildTextField('伺服器 URL', _serverUrlController, (v) {
+              setState(() => _serverUrl = v);
+              _saveSetting('server_url', v);
+            }),
             SwitchListTile(
               title: const Text('自動連線'),
               subtitle: const Text('啟動時自動連線到伺服器'),
               value: _autoConnect,
-              onChanged: (v) => setState(() => _autoConnect = v),
+              onChanged: (v) {
+                setState(() => _autoConnect = v);
+                _saveSetting('auto_connect', v);
+              },
             ),
           ]),
           _buildSection('語言設定', [
@@ -37,18 +80,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'zh-TW': '繁體中文',
               'ja': '日本語',
               'en': 'English',
-            }, (v) => setState(() => _language = v!)),
+            }, (v) {
+              setState(() => _language = v!);
+              _saveSetting('language', v!);
+            }),
           ]),
           _buildSection('語音設定', [
             SwitchListTile(
               title: const Text('啟用語音'),
               value: _voiceEnabled,
-              onChanged: (v) => setState(() => _voiceEnabled = v),
+              onChanged: (v) {
+                setState(() => _voiceEnabled = v);
+                _saveSetting('voice_enabled', v);
+              },
             ),
             _buildDropdown('TTS 引擎', _ttsProvider, {
               'cosyvoice': 'CosyVoice (推薦)',
               'gpt_sovits': 'GPT-SoVITS',
-            }, (v) => setState(() => _ttsProvider = v!)),
+            }, (v) {
+              setState(() => _ttsProvider = v!);
+              _saveSetting('tts_provider', v!);
+            }),
           ]),
           _buildSection('角色設定', [
             ListTile(
@@ -132,12 +184,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildTextField(String label, String value, Function(String) onChanged) {
+  Widget _buildTextField(String label, TextEditingController controller, Function(String) onChanged) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: TextField(
         decoration: InputDecoration(labelText: label),
-        controller: TextEditingController(text: value),
+        controller: controller,
         onChanged: onChanged,
       ),
     );

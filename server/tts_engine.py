@@ -76,27 +76,56 @@ class TTSEngine:
                 sf.write(str(output_path), audio_data, self.sample_rate)
 
             logger.info(f"TTS synthesized: {output_filename}")
-            visemes = self._generate_visemes_from_audio(str(output_path))
+            visemes = self._generate_visemes_from_audio(str(output_path), text)
             return output_filename, visemes
 
         except Exception as e:
             logger.error(f"TTS synthesis failed: {e}")
             return await self._mock_synthesize(text, language)
 
-    async def _mock_synthesize(self, text: str, language: str) -> tuple[str, list[dict]]:
+    async def _mock_synthesize(self, text: str, language: str = "zh-TW") -> tuple[str, list[dict]]:
         import uuid
+        import struct
 
         output_filename = f"{uuid.uuid4()}.wav"
         output_path = self.output_dir / output_filename
 
-        with open(output_path, "wb") as f:
-            f.write(b"")
+        sample_rate = self.sample_rate
+        duration = 0.5
+        num_samples = int(sample_rate * duration)
 
-        logger.warning(f"Using mock TTS output: {output_filename}")
+        with open(output_path, "wb") as f:
+            data_size = num_samples * 2  # 16-bit samples
+            f.write(b'RIFF')
+            f.write(struct.pack('<I', 36 + data_size))
+            f.write(b'WAVE')
+            f.write(b'fmt ')
+            f.write(struct.pack('<I', 16))
+            f.write(struct.pack('<H', 1))
+            f.write(struct.pack('<H', 1))
+            f.write(struct.pack('<I', sample_rate))
+            f.write(struct.pack('<I', sample_rate * 2))
+            f.write(struct.pack('<H', 2))
+            f.write(struct.pack('<H', 16))
+            f.write(b'data')
+            f.write(struct.pack('<I', data_size))
+            f.write(b'\x00' * data_size)
+
+        logger.warning(f"Using mock TTS output (silence generated): {output_filename}")
         return output_filename, []
 
-    def _generate_visemes_from_audio(self, audio_path: str) -> list[dict]:
-        """Generate simple amplitude-based viseme data from audio file."""
+    def _generate_visemes_from_audio(self, audio_path: str, text: str = "") -> list[dict]:
+        """Generate viseme data from audio file and text using a phoneme map."""
+        PHONEME_VISEME_MAP = {
+            'a': 'aa', 'o': 'oh', 'u': 'ou', 'e': 'ee', 'i': 'ih',
+            'b': 'oh', 'p': 'oh', 'm': 'oh',
+            'f': 'ih', 'v': 'ih',
+            's': 'ee', 'z': 'ee', 'sh': 'ee',
+            't': 'ih', 'd': 'ih', 'n': 'ih', 'l': 'ih',
+            'k': 'aa', 'g': 'aa',
+            'r': 'oh', 'w': 'ou', 'y': 'ee',
+        }
+        
         try:
             import wave
             import struct
@@ -110,6 +139,9 @@ class TTSEngine:
             chunk_size = max(1, framerate // 20)  # ~50ms windows
             visemes = []
             mouth_shapes = ['aa', 'oh', 'ee', 'ih', 'ou']
+            
+            # Map text to shape indices
+            text_chars = [c.lower() for c in text if c.lower() in PHONEME_VISEME_MAP]
 
             for i in range(0, len(samples), chunk_size):
                 chunk = samples[i:i + chunk_size]
@@ -122,10 +154,17 @@ class TTSEngine:
                     continue
 
                 weight = min(1.0, amplitude * 5)
-                shape_idx = (i // chunk_size) % len(mouth_shapes)
+                
+                if text_chars:
+                    char_idx = min(int((i / len(samples)) * len(text_chars)), len(text_chars) - 1)
+                    mapped_shape = PHONEME_VISEME_MAP.get(text_chars[char_idx], 'aa')
+                else:
+                    shape_idx = (i // chunk_size) % len(mouth_shapes)
+                    mapped_shape = mouth_shapes[shape_idx]
+
                 visemes.append({
                     'time': round(time_sec, 3),
-                    'viseme': mouth_shapes[shape_idx],
+                    'viseme': mapped_shape,
                     'weight': round(weight, 2),
                 })
 

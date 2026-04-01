@@ -9,6 +9,9 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
+    MAX_RETRIES = 3
+    RETRY_DELAYS = [1, 2, 4]
+
     def __init__(self, config: LLMConfig):
         self.config = config
         self.base_url = config.base_url
@@ -36,17 +39,28 @@ class LLMClient:
             return await self._complete_response(payload)
 
     async def _complete_response(self, payload: dict) -> str:
-        try:
-            response = await self.client.post(
-                f"{self.base_url}/v1/chat/completions",
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
-        except Exception as e:
-            logger.error(f"LLM request failed: {e}")
-            raise
+        last_error = None
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                response = await self.client.post(
+                    f"{self.base_url}/v1/chat/completions",
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code < 500:
+                    raise
+                last_error = e
+                logger.warning(f"LLM request failed (attempt {attempt + 1}/{self.MAX_RETRIES}): {e}")
+            except (httpx.TimeoutException, httpx.ConnectError) as e:
+                last_error = e
+                logger.warning(f"LLM request failed (attempt {attempt + 1}/{self.MAX_RETRIES}): {e}")
+            if attempt < self.MAX_RETRIES - 1:
+                await asyncio.sleep(self.RETRY_DELAYS[attempt])
+        logger.error(f"LLM request failed after {self.MAX_RETRIES} attempts: {last_error}")
+        raise last_error
 
     async def _stream_response(self, payload: dict) -> AsyncGenerator[str, None]:
         try:

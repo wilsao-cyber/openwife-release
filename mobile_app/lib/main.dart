@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/home_screen.dart';
 import 'services/api_service.dart';
+import 'services/chat_provider.dart';
 import 'utils/theme.dart';
 import 'utils/constants.dart';
 
@@ -19,6 +20,9 @@ class AIWifeApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(
           create: (_) => ApiService(baseUrl: Constants.serverUrl),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ChatProvider(),
         ),
       ],
       child: MaterialApp(

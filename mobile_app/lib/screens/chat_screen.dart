@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
-import '../models/vrm_model.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
+import '../services/chat_provider.dart';
+import '../utils/constants.dart';
+import '../widgets/chat_bubble.dart';
 import '../widgets/voice_input_button.dart';
-import 'home_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -12,50 +16,64 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
-  final List<Map<String, dynamic>> _messages = [];
   bool _isLoading = false;
+  String _language = Constants.defaultLanguage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLanguage();
+  }
+
+  Future<void> _loadLanguage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lang = prefs.getString('language') ?? Constants.defaultLanguage;
+    if (mounted) {
+      setState(() => _language = lang);
+    }
+  }
 
   void _sendMessage(String text) {
     if (text.trim().isEmpty) return;
-    setState(() {
-      _messages.add({'role': 'user', 'content': text, 'timestamp': DateTime.now()});
-      _isLoading = true;
-    });
+    final now = DateTime.now().toIso8601String();
+    final chatProvider = context.read<ChatProvider>();
+    chatProvider.addMessage({'role': 'user', 'content': text, 'timestamp': now});
+    setState(() => _isLoading = true);
     _controller.clear();
-    _simulateResponse();
+    _sendToServer(text);
   }
 
-  void _simulateResponse() {
-    Future.delayed(const Duration(seconds: 1), () {
-      _handleChatResponse({'text': '老公說的我都有在聽喔～', 'emotion': 'happy'});
-    });
+  Future<void> _sendToServer(String text) async {
+    try {
+      final apiService = context.read<ApiService>();
+      final result = await apiService.sendChat(text, _language);
+      _handleChatResponse(result);
+    } catch (e) {
+      final chatProvider = context.read<ChatProvider>();
+      final now = DateTime.now().toIso8601String();
+      chatProvider.addMessage({
+        'role': 'assistant',
+        'content': Constants.getError('send_failed', _language),
+        'timestamp': now,
+      });
+      setState(() => _isLoading = false);
+    }
   }
 
   void _handleChatResponse(Map<String, dynamic> response) {
     final text = response['text'] as String? ?? response['content'] as String? ?? '';
     final emotion = response['emotion'] as String? ?? 'neutral';
 
-    setState(() {
-      _messages.add({'role': 'assistant', 'content': text, 'timestamp': DateTime.now()});
-      _isLoading = false;
-    });
+    final chatProvider = context.read<ChatProvider>();
+    final now = DateTime.now().toIso8601String();
+    chatProvider.addMessage({'role': 'assistant', 'content': text, 'timestamp': now});
+    chatProvider.setExpression(emotion);
 
-    _setVrmExpression(emotion);
-  }
+    setState(() => _isLoading = false);
 
-  void _setVrmExpression(String emotion) {
-    final homeState = context.findAncestorStateOfType<HomeScreenState>();
-    if (homeState == null) return;
-    final expression = VrmExpression.values.firstWhere(
-      (e) => e.name == emotion,
-      orElse: () => VrmExpression.neutral,
-    );
-    homeState.vrmController.setExpression(expression);
-
-    // Reset to neutral after 5 seconds
     Future.delayed(const Duration(seconds: 5), () {
       if (mounted) {
-        homeState.vrmController.setExpression(VrmExpression.neutral);
+        chatProvider.setExpression('neutral');
       }
     });
   }
@@ -67,13 +85,25 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              reverse: true,
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final msg = _messages[_messages.length - 1 - index];
-                return _buildMessageBubble(msg);
+            child: Consumer<ChatProvider>(
+              builder: (context, chatProvider, child) {
+                final messages = chatProvider.messages;
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  reverse: true,
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final msg = messages[messages.length - 1 - index];
+                    final timestamp = msg['timestamp'] != null
+                        ? DateTime.tryParse(msg['timestamp']) ?? DateTime.now()
+                        : DateTime.now();
+                    return ChatBubble(
+                      text: msg['content'] ?? '',
+                      isUser: msg['role'] == 'user',
+                      timestamp: timestamp,
+                    );
+                  },
+                );
               },
             ),
           ),
@@ -88,32 +118,15 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildMessageBubble(Map<String, dynamic> msg) {
-    final isUser = msg['role'] == 'user';
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.all(12),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-        decoration: BoxDecoration(
-          color: isUser ? Colors.blue : Colors.pink,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Text(
-          msg['content'],
-          style: const TextStyle(color: Colors.white),
-        ),
-      ),
-    );
-  }
-
   Widget _buildInputArea() {
     return Container(
       padding: const EdgeInsets.all(8),
       child: Row(
         children: [
-          const VoiceInputButton(),
+          VoiceInputButton(
+            language: _language,
+            onResult: _sendMessage,
+          ),
           Expanded(
             child: TextField(
               controller: _controller,

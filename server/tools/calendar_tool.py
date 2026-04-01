@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -30,7 +31,7 @@ class CalendarTool:
             now = datetime.utcnow().isoformat() + "Z"
             end = (datetime.utcnow() + timedelta(days=days_ahead)).isoformat() + "Z"
 
-            events_result = (
+            events_result = await asyncio.to_thread(
                 self._calendar_service.events()
                 .list(
                     calendarId=calendar_id,
@@ -39,7 +40,7 @@ class CalendarTool:
                     singleEvents=True,
                     orderBy="startTime",
                 )
-                .execute()
+                .execute
             )
 
             events = events_result.get("items", [])
@@ -81,8 +82,8 @@ class CalendarTool:
                 "summary": title,
                 "location": location,
                 "description": description,
-                "start": {"dateTime": start_time, "timeZone": "Asia/Taipei"},
-                "end": {"dateTime": end_time, "timeZone": "Asia/Taipei"},
+                "start": {"dateTime": start_time, "timeZone": self.config.timezone},
+                "end": {"dateTime": end_time, "timeZone": self.config.timezone},
             }
 
             if reminders:
@@ -94,10 +95,10 @@ class CalendarTool:
                     ],
                 }
 
-            created_event = (
+            created_event = await asyncio.to_thread(
                 self._calendar_service.events()
                 .insert(calendarId=calendar_id, body=event)
-                .execute()
+                .execute
             )
 
             return {
@@ -119,25 +120,25 @@ class CalendarTool:
         calendar_id: str = "primary",
     ) -> dict:
         try:
-            event = (
+            event = await asyncio.to_thread(
                 self._calendar_service.events()
                 .get(calendarId=calendar_id, eventId=event_id)
-                .execute()
+                .execute
             )
 
             if title:
                 event["summary"] = title
             if start_time:
-                event["start"] = {"dateTime": start_time, "timeZone": "Asia/Taipei"}
+                event["start"] = {"dateTime": start_time, "timeZone": self.config.timezone}
             if end_time:
-                event["end"] = {"dateTime": end_time, "timeZone": "Asia/Taipei"}
+                event["end"] = {"dateTime": end_time, "timeZone": self.config.timezone}
             if description:
                 event["description"] = description
 
-            updated_event = (
+            updated_event = await asyncio.to_thread(
                 self._calendar_service.events()
                 .update(calendarId=calendar_id, eventId=event_id, body=event)
-                .execute()
+                .execute
             )
 
             return {"success": True, "event_id": updated_event["id"]}
@@ -147,9 +148,11 @@ class CalendarTool:
 
     async def delete(self, event_id: str, calendar_id: str = "primary") -> dict:
         try:
-            self._calendar_service.events().delete(
-                calendarId=calendar_id, eventId=event_id
-            ).execute()
+            await asyncio.to_thread(
+                self._calendar_service.events()
+                .delete(calendarId=calendar_id, eventId=event_id)
+                .execute
+            )
             return {"success": True, "event_id": event_id}
         except Exception as e:
             logger.error(f"Delete event failed: {e}")
@@ -165,7 +168,7 @@ class CalendarTool:
             now = datetime.utcnow()
             end = now + timedelta(days=days_ahead)
 
-            events_result = (
+            events_result = await asyncio.to_thread(
                 self._calendar_service.events()
                 .list(
                     calendarId=calendar_id,
@@ -174,7 +177,7 @@ class CalendarTool:
                     singleEvents=True,
                     orderBy="startTime",
                 )
-                .execute()
+                .execute
             )
 
             events = events_result.get("items", [])

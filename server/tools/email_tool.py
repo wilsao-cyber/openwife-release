@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import imaplib
 import email
@@ -73,16 +74,16 @@ class EmailTool:
     async def _list_gmail(self, limit: int, unread_only: bool) -> dict:
         try:
             q = "is:unread" if unread_only else ""
-            results = (
+            results = await asyncio.to_thread(
                 self._gmail_service.users()
                 .messages()
                 .list(userId="me", maxResults=limit, q=q)
-                .execute()
+                .execute
             )
             messages = results.get("messages", [])
             emails_list = []
             for msg in messages:
-                detail = (
+                detail = await asyncio.to_thread(
                     self._gmail_service.users()
                     .messages()
                     .get(
@@ -91,7 +92,7 @@ class EmailTool:
                         format="metadata",
                         metadataHeaders=["From", "Subject", "Date"],
                     )
-                    .execute()
+                    .execute
                 )
                 headers = detail.get("payload", {}).get("headers", [])
                 emails_list.append(
@@ -110,11 +111,11 @@ class EmailTool:
 
     async def _read_gmail(self, email_id: str) -> dict:
         try:
-            msg = (
+            msg = await asyncio.to_thread(
                 self._gmail_service.users()
                 .messages()
                 .get(userId="me", id=email_id, format="full")
-                .execute()
+                .execute
             )
             body = self._extract_body(msg)
             return {
@@ -144,11 +145,11 @@ class EmailTool:
             import base64
 
             raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-            result = (
+            result = await asyncio.to_thread(
                 self._gmail_service.users()
                 .messages()
                 .send(userId="me", body={"raw": raw})
-                .execute()
+                .execute
             )
             return {"success": True, "message_id": result["id"]}
         except Exception as e:
@@ -157,11 +158,11 @@ class EmailTool:
 
     async def _search_gmail(self, query: str, limit: int) -> dict:
         try:
-            results = (
+            results = await asyncio.to_thread(
                 self._gmail_service.users()
                 .messages()
                 .list(userId="me", maxResults=limit, q=query)
-                .execute()
+                .execute
             )
             messages = results.get("messages", [])
             return {"emails": messages, "total": len(messages)}
@@ -171,9 +172,12 @@ class EmailTool:
 
     async def _delete_gmail(self, email_id: str) -> dict:
         try:
-            self._gmail_service.users().messages().trash(
-                userId="me", id=email_id
-            ).execute()
+            await asyncio.to_thread(
+                self._gmail_service.users()
+                .messages()
+                .trash(userId="me", id=email_id)
+                .execute
+            )
             return {"success": True, "message_id": email_id}
         except Exception as e:
             logger.error(f"Gmail delete failed: {e}")
