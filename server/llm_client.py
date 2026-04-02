@@ -245,6 +245,14 @@ class LLMClient:
                             continue
                         choices = chunk.get("choices")
                         if not choices:
+                            # Check if this is a mid-stream content block
+                            err = chunk.get("error", {})
+                            err_type = err.get("type", "")
+                            if err_type == "data_inspection_failed" and self.has_fallback:
+                                logger.warning(f"Output blocked mid-stream by {self.provider}, falling back to {self.fallback_provider}")
+                                async for fb_chunk in self._fallback_stream(payload):
+                                    yield fb_chunk
+                                return
                             logger.warning(f"Stream chunk missing 'choices': {data[:200]}")
                             continue
                         delta = choices[0].get("delta", {})

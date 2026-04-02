@@ -277,7 +277,7 @@ class TTSEngine:
             else:
                 profile_id = self.config.voicebox_profile_id or ""
 
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 audio_parts = []
                 for sent in sentences:
                     payload = {
@@ -288,11 +288,15 @@ class TTSEngine:
                     if instruct:
                         payload["instruct"] = instruct
                     logger.info(f"Voicebox generating: {sent[:40]}...")
-                    resp = await client.post(
-                        f"{self.config.voicebox_api_url}/generate",
-                        json=payload,
-                    )
-                    resp.raise_for_status()
+                    try:
+                        resp = await client.post(
+                            f"{self.config.voicebox_api_url}/generate",
+                            json=payload,
+                        )
+                        resp.raise_for_status()
+                    except (httpx.TimeoutException, httpx.HTTPStatusError) as e:
+                        logger.warning(f"Voicebox segment skipped: {e}")
+                        continue
                     data = resp.json()
                     if "audio_path" in data:
                         source = Path(data["audio_path"])
