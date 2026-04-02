@@ -1351,12 +1351,16 @@ const providerApiKey = document.getElementById('provider-api-key');
 const providerStatus = document.getElementById('provider-status');
 
 providerSelect.onchange = () => {
-  const preset = providerPresets[providerSelect.value];
+  const pv = providerSelect.value;
+  const preset = providerPresets[pv];
   if (preset) {
     providerBaseUrl.value = preset.base_url;
-    providerModel.value = preset.model;
   }
-  providerApiKey.placeholder = providerSelect.value === 'ollama' ? '（本機不需要）' : 'sk-...';
+  // Load saved keys for this provider
+  const saved = loadProviderKeys(pv);
+  providerModel.value = saved.model || (preset ? preset.model : '');
+  providerApiKey.value = saved.key;
+  providerApiKey.placeholder = pv === 'ollama' ? '（本機不需要）' : (saved.key ? '已儲存 ✓' : 'sk-...');
 };
 
 // Load current provider on settings open
@@ -1393,6 +1397,7 @@ document.getElementById('save-provider-btn').onclick = async () => {
     if (data.success) {
       btn.textContent = '已套用 ✓';
       providerStatus.textContent = '🔑 API Key 已設定';
+      saveProviderKeys(providerSelect.value, providerApiKey.value, providerModel.value);
       showToast(`已切換到 ${data.provider} / ${data.model}`);
     } else {
       btn.textContent = '失敗 ✗';
@@ -1430,14 +1435,42 @@ const CLOUD_DEFAULT_MODELS = {
   openai: 'gpt-4o-mini',
 };
 
+// Per-provider key storage helpers
+function saveProviderKeys(provider, key, model) {
+  if (provider && key) localStorage.setItem('ai-wife-key-' + provider, key);
+  if (provider && model) localStorage.setItem('ai-wife-model-' + provider, model);
+}
+function loadProviderKeys(provider) {
+  return {
+    key: localStorage.getItem('ai-wife-key-' + provider) || '',
+    model: localStorage.getItem('ai-wife-model-' + provider) || CLOUD_DEFAULT_MODELS[provider] || '',
+  };
+}
+
 setupProvider.addEventListener('change', () => {
   const isCloud = setupProvider.value !== 'ollama';
   setupCloudFields.style.display = isCloud ? 'block' : 'none';
   setupLocalModelField.style.display = isCloud ? 'none' : 'block';
   document.getElementById('setup-fallback-fields').style.display = isCloud ? 'block' : 'none';
   if (isCloud) {
-    setupCloudModel.value = CLOUD_DEFAULT_MODELS[setupProvider.value] || '';
-    setupCloudModel.placeholder = CLOUD_DEFAULT_MODELS[setupProvider.value] || 'model name';
+    // Save current provider keys before switching
+    const prev = setupApiKey.value.trim();
+    const prevModel = setupCloudModel.value.trim();
+    // Load stored keys for new provider
+    const saved = loadProviderKeys(setupProvider.value);
+    setupCloudModel.value = saved.model;
+    setupApiKey.value = saved.key;
+    setupApiKey.placeholder = saved.key ? '已儲存 ✓' : 'sk-...';
+  }
+});
+
+// Same for fallback provider
+document.getElementById('setup-fallback-provider').addEventListener('change', () => {
+  const fbProv = document.getElementById('setup-fallback-provider').value;
+  if (fbProv) {
+    const saved = loadProviderKeys(fbProv);
+    document.getElementById('setup-fallback-model').value = saved.model || CLOUD_DEFAULT_MODELS[fbProv] || '';
+    document.getElementById('setup-fallback-key').value = saved.key;
   }
 });
 
@@ -1606,11 +1639,17 @@ enterBtn.addEventListener('click', async () => {
 
     localStorage.setItem('ai-wife-api-key', apiKey);
     localStorage.setItem('ai-wife-cloud-model', cloudModel);
+    saveProviderKeys(provider, apiKey, cloudModel);
     // Save fallback
     const _fbp = document.getElementById('setup-fallback-provider').value;
     const _fbk = document.getElementById('setup-fallback-key').value.trim();
     const _fbm = document.getElementById('setup-fallback-model').value.trim();
-    if (_fbp) { localStorage.setItem('ai-wife-fb-provider', _fbp); localStorage.setItem('ai-wife-fb-key', _fbk); localStorage.setItem('ai-wife-fb-model', _fbm); }
+    if (_fbp) {
+      localStorage.setItem('ai-wife-fb-provider', _fbp);
+      localStorage.setItem('ai-wife-fb-key', _fbk);
+      localStorage.setItem('ai-wife-fb-model', _fbm);
+      saveProviderKeys(_fbp, _fbk, _fbm);
+    }
 
     enterBtn.textContent = '連線中...';
     enterBtn.disabled = true;
