@@ -267,6 +267,11 @@ class TTSEngine:
                 sentences.append(s)
         if not sentences:
             sentences = [ja_text]
+        # Ensure first segment is long enough (merge with second if too short)
+        # Short first segments cause TTS cold-start glitches
+        while len(sentences) > 1 and len(sentences[0]) < 20:
+            sentences[0] = sentences[0] + sentences[1]
+            sentences.pop(1)
 
         instruct = self.EMOTION_INSTRUCT_MAP.get(emotion, self.EMOTION_INSTRUCT_MAP["neutral"])
 
