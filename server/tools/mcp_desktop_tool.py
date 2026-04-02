@@ -23,13 +23,18 @@ class MCPDesktopTool:
     async def initialize(self):
         """初始化 MCP 連線"""
         try:
-            await self.mcp.initialize()
-            screen_info = await self.mcp.get_screen_info()
+            await asyncio.wait_for(self.mcp.start(), timeout=5)
+            await asyncio.wait_for(self.mcp.initialize(), timeout=5)
             self._initialized = True
-            logger.info(f"MCP Desktop Control initialized: {screen_info}")
-            return {"success": True, "screen_info": screen_info}
+            logger.info("MCP Desktop Control initialized")
+            return {"success": True}
+        except asyncio.TimeoutError:
+            logger.warning("MCP Desktop init timed out, will retry on first use")
+            self._initialized = False
+            return {"error": "timeout"}
         except Exception as e:
-            logger.error(f"MCP init failed: {e}")
+            logger.warning(f"MCP init skipped: {e}")
+            self._initialized = False
             return {"error": str(e)}
 
     async def screenshot(self, detect_elements: bool = True) -> dict:

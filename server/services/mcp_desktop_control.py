@@ -84,8 +84,8 @@ class MCPDesktopControl:
         self._process.stdin.write(request_json.encode())
         await self._process.stdin.drain()
 
-        # 讀取回應
-        response_line = await self._process.stdout.readline()
+        # 讀取回應（10 秒 timeout）
+        response_line = await asyncio.wait_for(self._process.stdout.readline(), timeout=10)
         if not response_line:
             raise RuntimeError("MCP server closed connection")
 
