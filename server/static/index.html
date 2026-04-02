@@ -96,6 +96,15 @@
   .tts-btn { display: inline-block; cursor: pointer; font-size: 16px; margin-left: 6px; opacity: 0.6; transition: opacity 0.2s; user-select: none; }
   .tts-btn:hover { opacity: 1; }
   .tts-btn.playing { opacity: 1; animation: pulse 1s infinite; }
+  .ja-toggle { display: inline-block; cursor: pointer; font-size: 12px; margin-left: 6px; opacity: 0.5; user-select: none; color: #FF69B4; }
+  .ja-toggle:hover { opacity: 1; }
+  .ja-drawer { display: none; margin-top: 4px; padding: 6px 10px; background: rgba(255,105,180,0.08); border-left: 2px solid #FF69B4; border-radius: 4px; font-size: 13px; color: #ddd; line-height: 1.5; }
+  .ja-drawer.open { display: block; }
+  .tts-loading { display: inline-block; font-size: 11px; color: #FF69B4; margin-left: 6px; }
+  .tts-loading::after { content: ''; animation: dots 1.2s steps(4) infinite; }
+  @keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+  #tts-toggle { cursor: pointer; font-size: 13px; padding: 2px 8px; border-radius: 10px; border: 1px solid #555; background: none; color: #aaa; margin-left: 6px; }
+  #tts-toggle.on { color: #FF69B4; border-color: #FF69B4; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
   .typing-indicator { display: inline-flex; gap: 4px; padding: 4px 0; }
   .typing-indicator span { width: 6px; height: 6px; border-radius: 50%; background: #FF69B4; opacity: 0.4; animation: blink 1.4s infinite both; }
@@ -274,10 +283,19 @@
       <option value="ja">日本語</option>
       <option value="en">English</option>
     </select>
+    <button id="tts-toggle" class="on" title="語音開關">🔊</button>
     <select id="model-selector" title="切換模型">
-      <option value="smart7">Qwen 2.5 7B</option>
-      <option value="smart9">Qwen 3.5 9B</option>
-      <option value="ultra">Qwen 3.5 27B</option>
+      <optgroup label="本機 Ollama">
+        <option value="smart7">Qwen 2.5 7B</option>
+        <option value="smart9">Qwen 3.5 9B</option>
+        <option value="ultra">Qwen 3.5 27B</option>
+      </optgroup>
+      <optgroup label="☁️ 雲端">
+        <option value="cloud:qwen3-235b-a22b">Qwen3 235B MoE</option>
+        <option value="cloud:qwen3-32b">Qwen3 32B</option>
+        <option value="cloud:qwen-plus">Qwen Plus</option>
+        <option value="cloud:qwen-turbo">Qwen Turbo</option>
+      </optgroup>
     </select>
   </div>
   <div id="loading"><div class="spinner"></div><span>Loading model...</span></div>
@@ -305,12 +323,31 @@
     <div class="setup-title">🌸 AI Wife</div>
     <div class="setup-subtitle">選擇模型並測試連線</div>
     <div class="setup-field">
-      <label>AI 模型</label>
+      <label>運行方式</label>
+      <select id="setup-provider">
+        <option value="ollama">🖥️ 本機 Ollama</option>
+        <option value="dashscope">☁️ Alibaba Cloud / DashScope</option>
+        <option value="openrouter">☁️ OpenRouter（無審查）</option>
+        <option value="openai">☁️ OpenAI</option>
+      </select>
+    </div>
+    <div class="setup-field" id="setup-local-model-field">
+      <label>本機模型</label>
       <select id="setup-model">
         <option value="smart7">Qwen 2.5 7B（快速）</option>
         <option value="smart9">Qwen 3.5 9B（平衡）</option>
         <option value="ultra">Qwen 3.5 27B（高品質）</option>
       </select>
+    </div>
+    <div id="setup-cloud-fields" style="display:none;">
+      <div class="setup-field">
+        <label>雲端模型</label>
+        <input id="setup-cloud-model" type="text" list="model-suggestions" placeholder="qwen3-235b-a22b" style="width:100%;padding:8px;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
+      </div>
+      <div class="setup-field">
+        <label>API Key</label>
+        <input id="setup-api-key" type="password" placeholder="sk-..." style="width:100%;padding:8px;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
+      </div>
     </div>
     <div class="setup-field">
       <label>語言</label>
@@ -344,6 +381,7 @@
       <button class="tab-btn active" data-tab="tab-memory">記憶區</button>
       <button class="tab-btn" data-tab="tab-soul">核心靈魂</button>
       <button class="tab-btn" data-tab="tab-heartbeat">定時任務</button>
+      <button class="tab-btn" data-tab="tab-provider">LLM 供應商</button>
     </div>
     <div class="tab-body active" id="tab-memory">
       <div id="memory-list">Loading...</div>
@@ -357,6 +395,36 @@
     </div>
     <div class="tab-body" id="tab-heartbeat">
       <div id="heartbeat-list">Loading...</div>
+    </div>
+    <div class="tab-body" id="tab-provider">
+      <label style="color:#FF69B4;font-size:13px;font-weight:bold;">LLM Provider</label>
+      <select id="provider-select" style="width:100%;padding:8px;margin:8px 0;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;">
+        <option value="ollama">Ollama（本機）</option>
+        <option value="dashscope">Alibaba Cloud / DashScope</option>
+        <option value="openrouter">OpenRouter（無審查）</option>
+        <option value="openai">OpenAI</option>
+        <option value="openai_compatible">OpenAI Compatible</option>
+      </select>
+      <label style="color:#FF69B4;font-size:13px;font-weight:bold;">Base URL</label>
+      <input id="provider-base-url" type="text" placeholder="http://localhost:9090" style="width:100%;padding:8px;margin:8px 0;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
+      <label style="color:#FF69B4;font-size:13px;font-weight:bold;">Model</label>
+      <input id="provider-model" type="text" list="model-suggestions" placeholder="qwen-plus" style="width:100%;padding:8px;margin:8px 0;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
+      <datalist id="model-suggestions">
+        <option value="qwen3-235b-a22b">DashScope: Qwen3 235B MoE</option>
+        <option value="qwen3-32b">DashScope: Qwen3 32B</option>
+        <option value="qwen-plus">DashScope: Qwen Plus</option>
+        <option value="qwen-turbo">DashScope: Qwen Turbo</option>
+        <option value="qwen/qwen3.6-plus:free">OpenRouter: Qwen3.6 Plus（免費）</option>
+        <option value="qwen/qwen3-235b-a22b">OpenRouter: Qwen3 235B MoE</option>
+        <option value="nousresearch/hermes-3-llama-3.1-405b:free">OpenRouter: Hermes 405B（免費）</option>
+        <option value="cognitivecomputations/dolphin-mistral-24b-venice-edition:free">OpenRouter: Dolphin 24B（免費/無審查）</option>
+        <option value="gpt-4o-mini">OpenAI: GPT-4o Mini</option>
+        <option value="gpt-4o">OpenAI: GPT-4o</option>
+      </datalist>
+      <label style="color:#FF69B4;font-size:13px;font-weight:bold;">API Key</label>
+      <input id="provider-api-key" type="password" placeholder="sk-..." style="width:100%;padding:8px;margin:8px 0;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
+      <div id="provider-status" style="color:#aaa;font-size:12px;margin:4px 0;"></div>
+      <button id="save-provider-btn" style="margin-top:10px;width:100%;padding:10px;background:#FF69B4;color:white;border:none;border-radius:6px;cursor:pointer;">套用設定</button>
     </div>
   </div>
 </div>
@@ -708,31 +776,47 @@ const CLIENT_ID = uuidv4();
 // ── Audio / TTS Playback ─────────────────────────────────────────────
 let currentAudio = null;
 let isPlaying = false;
+let ttsEnabled = localStorage.getItem('ai-wife-tts') !== 'off';
 
-async function playTTS(text) {
+const ttsToggleBtn = document.getElementById('tts-toggle');
+ttsToggleBtn.className = ttsEnabled ? 'on' : '';
+ttsToggleBtn.textContent = ttsEnabled ? '🔊' : '🔇';
+ttsToggleBtn.onclick = () => {
+  ttsEnabled = !ttsEnabled;
+  localStorage.setItem('ai-wife-tts', ttsEnabled ? 'on' : 'off');
+  ttsToggleBtn.className = ttsEnabled ? 'on' : '';
+  ttsToggleBtn.textContent = ttsEnabled ? '🔊' : '🔇';
+  if (!ttsEnabled && currentAudio) { stopTTS(); }
+};
+
+async function playTTS(text, emotion = 'neutral') {
   try {
     if (currentAudio) {
       currentAudio.pause();
       currentAudio = null;
     }
     const cleanText = text.replace(/\[emotion:\w+\]/g, '').trim();
-    if (!cleanText) return;
+    if (!cleanText) return null;
 
     const resp = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: cleanText, language: langSel.value }),
+      body: JSON.stringify({ text: cleanText, language: langSel.value, emotion }),
     });
-    if (!resp.ok) return;
+    if (!resp.ok) return null;
 
-    const blob = await resp.blob();
+    const data = await resp.json();
+    const audioResp = await fetch(data.audio_url);
+    const blob = await audioResp.blob();
     const url = URL.createObjectURL(blob);
     currentAudio = new Audio(url);
     currentAudio.play();
     isPlaying = true;
     currentAudio.onended = () => { isPlaying = false; currentAudio = null; };
+    return data.ja_text || null;
   } catch (e) {
     console.warn('TTS playback failed:', e);
+    return null;
   }
 }
 
@@ -1012,33 +1096,85 @@ async function sendMessage() {
               timingDiv.className = 'timing-badge';
               timingDiv.textContent = `⏱️ 首字 ${ttfb}s · 總計 ${elapsed}s · ${fullText.length} 字`;
               aiDiv.appendChild(timingDiv);
-              // TTS replay/stop button
+              // TTS replay/stop button + Japanese drawer
+              const ttsRow = document.createElement('div');
+              ttsRow.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;margin-top:2px;';
               const ttsBtn = document.createElement('span');
               ttsBtn.className = 'tts-btn';
               ttsBtn.textContent = '\uD83D\uDD0A';
               ttsBtn.title = '播放 / 停止語音';
+              ttsRow.appendChild(ttsBtn);
+
+              const ttsLoading = document.createElement('span');
+              ttsLoading.className = 'tts-loading';
+              ttsLoading.textContent = '語音生成中';
+              ttsLoading.style.display = 'none';
+              ttsRow.appendChild(ttsLoading);
+
+              const jaToggle = document.createElement('span');
+              jaToggle.className = 'ja-toggle';
+              jaToggle.textContent = '🇯🇵 日本語';
+              jaToggle.title = '顯示語音日文原文';
+              ttsRow.appendChild(jaToggle);
+              aiDiv.appendChild(ttsRow);
+
+              const jaDrawer = document.createElement('div');
+              jaDrawer.className = 'ja-drawer';
+              aiDiv.appendChild(jaDrawer);
+
+              jaToggle.onclick = () => {
+                jaDrawer.classList.toggle('open');
+              };
+
               const ttsText = fullText;
+              const ttsEmotion = evt.emotion || 'neutral';
+              let cachedAudioUrl = null;
+              let cachedJaText = null;
+              let ttsGenerating = false;
+
+              function replayAudio() {
+                if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+                currentAudio = new Audio(cachedAudioUrl);
+                currentAudio.play();
+                isPlaying = true;
+                ttsBtn.classList.add('playing');
+                currentAudio.onended = () => { isPlaying = false; currentAudio = null; ttsBtn.classList.remove('playing'); };
+              }
+
+              async function doPlayTTS() {
+                if (cachedAudioUrl) { replayAudio(); return; }
+                if (ttsGenerating) return; // prevent duplicate
+                ttsGenerating = true;
+                ttsLoading.style.display = 'inline-block';
+                ttsBtn.classList.add('playing');
+                const result = await playTTS(ttsText, ttsEmotion);
+                ttsLoading.style.display = 'none';
+                ttsGenerating = false;
+                if (result) {
+                  cachedJaText = result;
+                  jaDrawer.textContent = result;
+                }
+                if (currentAudio) {
+                  cachedAudioUrl = currentAudio.src;
+                }
+                const checkEnd = setInterval(() => {
+                  if (!isPlaying) { ttsBtn.classList.remove('playing'); clearInterval(checkEnd); }
+                }, 300);
+              }
+
               ttsBtn.onclick = () => {
                 if (isPlaying && currentAudio) {
                   stopTTS();
                   ttsBtn.classList.remove('playing');
                 } else {
-                  playTTS(ttsText);
-                  ttsBtn.classList.add('playing');
-                  const checkEnd = setInterval(() => {
-                    if (!isPlaying) { ttsBtn.classList.remove('playing'); clearInterval(checkEnd); }
-                  }, 300);
+                  doPlayTTS();
                 }
               };
-              aiDiv.appendChild(ttsBtn);
+
               showGreeting(aiSpan.textContent.substring(0, 60) + (aiSpan.textContent.length > 60 ? '...' : ''));
-              // Auto-play TTS audio
-              if (fullText) {
-                playTTS(fullText);
-                ttsBtn.classList.add('playing');
-                const checkEnd = setInterval(() => {
-                  if (!isPlaying) { ttsBtn.classList.remove('playing'); clearInterval(checkEnd); }
-                }, 300);
+              // Auto-play TTS audio if enabled
+              if (fullText && ttsEnabled) {
+                doPlayTTS();
               }
               setTimeout(() => {
                 setEmotion('neutral');
@@ -1150,6 +1286,9 @@ async function loadSettingsData() {
       });
     }
   } catch (e) { console.error('Load heartbeat failed', e); }
+
+  // Provider
+  loadProviderSettings();
 }
 
 document.getElementById('save-soul-btn').onclick = async () => {
@@ -1166,14 +1305,121 @@ document.getElementById('save-soul-btn').onclick = async () => {
   } catch (e) { alert('儲存失敗'); }
 };
 
+// ── Provider Settings ────────────────────────────────────────────────
+const providerPresets = {
+  ollama:            { base_url: 'http://localhost:9090', model: 'qwen3.5:9b' },
+  dashscope:         { base_url: 'https://dashscope-intl.aliyuncs.com/compatible-mode', model: 'qwen3-235b-a22b' },
+  openrouter:        { base_url: 'https://openrouter.ai/api', model: 'qwen/qwen3.6-plus:free' },
+  openai:            { base_url: 'https://api.openai.com', model: 'gpt-4o-mini' },
+  openai_compatible: { base_url: '', model: '' },
+};
+
+const providerSelect = document.getElementById('provider-select');
+const providerBaseUrl = document.getElementById('provider-base-url');
+const providerModel = document.getElementById('provider-model');
+const providerApiKey = document.getElementById('provider-api-key');
+const providerStatus = document.getElementById('provider-status');
+
+providerSelect.onchange = () => {
+  const preset = providerPresets[providerSelect.value];
+  if (preset) {
+    providerBaseUrl.value = preset.base_url;
+    providerModel.value = preset.model;
+  }
+  providerApiKey.placeholder = providerSelect.value === 'ollama' ? '（本機不需要）' : 'sk-...';
+};
+
+// Load current provider on settings open
+async function loadProviderSettings() {
+  try {
+    const res = await fetch('/api/config/provider');
+    if (res.ok) {
+      const data = await res.json();
+      providerSelect.value = data.provider || 'ollama';
+      providerBaseUrl.value = data.base_url || '';
+      providerModel.value = data.model || '';
+      providerApiKey.value = '';
+      providerStatus.textContent = data.has_api_key ? '🔑 API Key 已設定' : '';
+    }
+  } catch (e) { console.error('Load provider failed', e); }
+}
+
+document.getElementById('save-provider-btn').onclick = async () => {
+  const btn = document.getElementById('save-provider-btn');
+  btn.disabled = true;
+  btn.textContent = '套用中...';
+  try {
+    const res = await fetch('/api/config/provider', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: providerSelect.value,
+        base_url: providerBaseUrl.value,
+        api_key: providerApiKey.value,
+        model: providerModel.value,
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      btn.textContent = '已套用 ✓';
+      providerStatus.textContent = '🔑 API Key 已設定';
+      showToast(`已切換到 ${data.provider} / ${data.model}`);
+    } else {
+      btn.textContent = '失敗 ✗';
+      providerStatus.textContent = '❌ ' + (data.error || 'Unknown error');
+    }
+  } catch (e) {
+    btn.textContent = '失敗 ✗';
+    providerStatus.textContent = '❌ 連線失敗';
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = '套用設定'; }, 2000);
+};
+
 // ── Startup Screen ──────────────────────────────────────────────────
 const setupScreen = document.getElementById('setup-screen');
 const setupModel = document.getElementById('setup-model');
 const setupLang = document.getElementById('setup-lang');
+const setupProvider = document.getElementById('setup-provider');
+const setupCloudFields = document.getElementById('setup-cloud-fields');
+const setupLocalModelField = document.getElementById('setup-local-model-field');
+const setupCloudModel = document.getElementById('setup-cloud-model');
+const setupApiKey = document.getElementById('setup-api-key');
 const testBtn = document.getElementById('test-connection-btn');
 const enterBtn = document.getElementById('enter-btn');
 const toast = document.getElementById('toast');
 const modelOverlay = document.getElementById('model-switch-overlay');
+
+const CLOUD_BASE_URLS = {
+  dashscope: 'https://dashscope-intl.aliyuncs.com/compatible-mode',
+  openrouter: 'https://openrouter.ai/api',
+  openai: 'https://api.openai.com',
+};
+const CLOUD_DEFAULT_MODELS = {
+  dashscope: 'qwen3-235b-a22b',
+  openrouter: 'qwen/qwen3.6-plus:free',
+  openai: 'gpt-4o-mini',
+};
+
+setupProvider.addEventListener('change', () => {
+  const isCloud = setupProvider.value !== 'ollama';
+  setupCloudFields.style.display = isCloud ? 'block' : 'none';
+  setupLocalModelField.style.display = isCloud ? 'none' : 'block';
+  if (isCloud) {
+    setupCloudModel.value = CLOUD_DEFAULT_MODELS[setupProvider.value] || '';
+    setupCloudModel.placeholder = CLOUD_DEFAULT_MODELS[setupProvider.value] || 'model name';
+  }
+});
+
+// Restore saved provider
+const savedProvider = localStorage.getItem('ai-wife-provider');
+const savedApiKey = localStorage.getItem('ai-wife-api-key');
+const savedCloudModel = localStorage.getItem('ai-wife-cloud-model');
+if (savedProvider && savedProvider !== 'ollama') {
+  setupProvider.value = savedProvider;
+  setupProvider.dispatchEvent(new Event('change'));
+  if (savedCloudModel) setupCloudModel.value = savedCloudModel;
+  if (savedApiKey) setupApiKey.value = savedApiKey;
+}
 
 function showToast(msg, duration = 3000) {
   toast.textContent = msg;
@@ -1189,6 +1435,34 @@ function setStatus(id, status, detail = '') {
   if (detailEl && detail) detailEl.textContent = detail;
 }
 
+let welcomeAudioUrl = null;
+let welcomeJaText = null;
+
+async function pregenWelcomeTTS() {
+  try {
+    const resp = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: '老公～歡迎回來！今天想跟小愛聊什麼呢？',
+        language: langSel.value || 'zh-TW',
+        emotion: 'happy',
+      }),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      // Pre-fetch the audio blob
+      const audioResp = await fetch(data.audio_url);
+      const blob = await audioResp.blob();
+      welcomeAudioUrl = URL.createObjectURL(blob);
+      welcomeJaText = data.ja_text || '';
+      console.log('Welcome TTS pre-generated');
+    }
+  } catch (e) {
+    console.warn('Welcome TTS pregen failed:', e);
+  }
+}
+
 async function runTests() {
   testBtn.disabled = true;
   testBtn.textContent = '測試中...';
@@ -1196,15 +1470,43 @@ async function runTests() {
   const tests = ['llm', 'tts', 'stt', 'skills'];
   tests.forEach(t => setStatus('test-' + t, 'testing'));
 
+  // Apply provider setting BEFORE running tests
+  const prov = setupProvider.value;
+  if (prov !== 'ollama') {
+    const ak = setupApiKey.value.trim();
+    const cm = setupCloudModel.value.trim();
+    if (!ak) { showToast('請先輸入 API Key'); testBtn.disabled = false; testBtn.textContent = '測試連線'; return; }
+    if (!cm) { showToast('請先輸入模型名稱'); testBtn.disabled = false; testBtn.textContent = '測試連線'; return; }
+    try {
+      const pr = await fetch('/api/config/provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: prov, base_url: CLOUD_BASE_URLS[prov], api_key: ak, model: cm }),
+      });
+      const pd = await pr.json();
+      if (!pd.success) { showToast('Provider 設定失敗: ' + pd.error); testBtn.disabled = false; testBtn.textContent = '測試連線'; return; }
+    } catch (e) { showToast('連線失敗'); testBtn.disabled = false; testBtn.textContent = '測試連線'; return; }
+  } else {
+    // Ensure we're on Ollama with the selected local model
+    try {
+      await fetch('/api/config/provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'ollama', base_url: 'http://localhost:9090', api_key: '', model: setupModel.value }),
+      });
+    } catch (e) {}
+  }
+
   try {
     const res = await fetch('/api/health/test');
     const data = await res.json();
 
     // LLM
     if (data.llm?.ok) {
-      setStatus('test-llm', 'ok', `${data.llm.model} (${data.llm.latency_ms}ms)`);
+      const pLabel = data.llm.provider === 'ollama' ? '🖥️' : '☁️';
+      setStatus('test-llm', 'ok', `${pLabel} ${data.llm.model} (${data.llm.latency_ms}ms)`);
     } else {
-      setStatus('test-llm', 'fail', data.llm?.error || 'Unknown');
+      setStatus('test-llm', 'fail', data.llm?.error?.substring(0, 80) || 'Unknown');
     }
 
     // TTS
@@ -1228,9 +1530,16 @@ async function runTests() {
       setStatus('test-skills', 'fail', data.skills?.error || 'Unknown');
     }
 
-    // Enable enter button if all passed
-    const allOk = tests.every(t => data[t]?.ok);
-    if (allOk) {
+    // Enable enter button only after welcome TTS is ready
+    const llmOk = data.llm?.ok;
+    if (llmOk) {
+      if (ttsEnabled) {
+        enterBtn.textContent = '語音準備中...';
+        enterBtn.disabled = true;
+        await pregenWelcomeTTS();
+        enterBtn.textContent = '進入 💕';
+        enterBtn.disabled = false;
+      }
       enterBtn.classList.add('ready');
     }
   } catch (e) {
@@ -1243,18 +1552,70 @@ async function runTests() {
 
 testBtn.addEventListener('click', runTests);
 
-enterBtn.addEventListener('click', () => {
-  // Save preferences
-  localStorage.setItem('ai-wife-model', setupModel.value);
-  localStorage.setItem('ai-wife-lang', setupLang.value);
+enterBtn.addEventListener('click', async () => {
+  const provider = setupProvider.value;
+  const isCloud = provider !== 'ollama';
 
-  // Sync main UI selectors
-  document.getElementById('model-selector').value = setupModel.value;
+  // Save preferences
+  localStorage.setItem('ai-wife-provider', provider);
+  localStorage.setItem('ai-wife-lang', setupLang.value);
   langSel.value = setupLang.value;
 
-  // Hide setup screen
+  if (isCloud) {
+    const cloudModel = setupCloudModel.value.trim();
+    const apiKey = setupApiKey.value.trim();
+    if (!apiKey) { showToast('請輸入 API Key'); return; }
+    if (!cloudModel) { showToast('請輸入模型名稱'); return; }
+
+    localStorage.setItem('ai-wife-api-key', apiKey);
+    localStorage.setItem('ai-wife-cloud-model', cloudModel);
+
+    enterBtn.textContent = '連線中...';
+    enterBtn.disabled = true;
+    try {
+      const res = await fetch('/api/config/provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: provider,
+          base_url: CLOUD_BASE_URLS[provider],
+          api_key: apiKey,
+          model: cloudModel,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        showToast('設定失敗: ' + (data.error || ''));
+        enterBtn.textContent = '進入 💕';
+        enterBtn.disabled = false;
+        return;
+      }
+      document.getElementById('model-selector').value = 'cloud:' + cloudModel;
+    } catch (e) {
+      showToast('連線失敗');
+      enterBtn.textContent = '進入 💕';
+      enterBtn.disabled = false;
+      return;
+    }
+  } else {
+    localStorage.setItem('ai-wife-model', setupModel.value);
+    document.getElementById('model-selector').value = setupModel.value;
+  }
+
   setupScreen.classList.add('hidden');
+  enterBtn.textContent = '進入 💕';
+  enterBtn.disabled = false;
   showToast('歡迎回來 💕');
+  // Play welcome TTS (user just clicked, so autoplay is allowed)
+  if (welcomeAudioUrl && ttsEnabled) {
+    setTimeout(() => {
+      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      currentAudio = new Audio(welcomeAudioUrl);
+      currentAudio.play().catch(() => {});
+      isPlaying = true;
+      currentAudio.onended = () => { isPlaying = false; currentAudio = null; };
+    }, 500);
+  }
 });
 
 // Load saved preferences
@@ -1265,21 +1626,66 @@ if (savedLang) {
   setupLang.value = savedLang;
   langSel.value = savedLang;
 }
+// Restore cloud model in top selector
+if (savedProvider && savedProvider !== 'ollama' && savedCloudModel) {
+  const cloudVal = 'cloud:' + savedCloudModel;
+  // Add option if not in list
+  if (!modelSelector.querySelector(`option[value="${cloudVal}"]`)) {
+    const opt = document.createElement('option');
+    opt.value = cloudVal;
+    opt.textContent = '☁️ ' + savedCloudModel;
+    modelSelector.querySelector('optgroup:last-child').appendChild(opt);
+  }
+  modelSelector.value = cloudVal;
+}
 
 // ── Model Selector ──────────────────────────────────────────────────
 const modelSelector = document.getElementById('model-selector');
 modelSelector.addEventListener('change', async () => {
-  const preset = modelSelector.value;
+  const val = modelSelector.value;
   modelOverlay.classList.add('show');
   try {
-    const res = await fetch('/api/config/model', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: preset }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast(`已切換至 ${data.model}`);
+    if (val.startsWith('cloud:')) {
+      const cloudModel = val.replace('cloud:', '');
+      const savedKey = localStorage.getItem('ai-wife-api-key') || '';
+      const savedProv = localStorage.getItem('ai-wife-provider') || 'dashscope';
+      if (!savedKey) {
+        showToast('請先在設定頁輸入 API Key');
+        modelOverlay.classList.remove('show');
+        return;
+      }
+      const res = await fetch('/api/config/provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: savedProv,
+          base_url: CLOUD_BASE_URLS[savedProv],
+          api_key: savedKey,
+          model: cloudModel,
+        }),
+      });
+      const data = await res.json();
+      showToast(data.success ? `已切換至 ☁️ ${cloudModel}` : '切換失敗: ' + data.error);
+    } else {
+      // Switch back to Ollama local
+      const res = await fetch('/api/config/provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'ollama',
+          base_url: 'http://localhost:9090',
+          api_key: '',
+          model: val,
+        }),
+      });
+      await res.json();
+      const res2 = await fetch('/api/config/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: val }),
+      });
+      const data = await res2.json();
+      showToast(data.success ? `已切換至 🖥️ ${data.model}` : '切換失敗');
     }
   } catch (e) {
     showToast('切換失敗: ' + e.message);
@@ -1318,7 +1724,7 @@ if (savedModel && savedLang) {
 }
 
 setTimeout(() => {
-  showGreeting('Hello~ 老公今天想做什麼呢？');
+  showGreeting('老公～歡迎回來！今天想跟小愛聊什麼呢？');
   if (animController && animController.actions.has('wave')) {
     animController.play('wave');
     setTimeout(() => { if (animController) animController.play('idle'); }, 3000);

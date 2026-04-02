@@ -1,8 +1,11 @@
 import os
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from skills.base_skill import BaseSkill
 from tools.calendar_tool import CalendarTool
 from config import config
+
+_tz = ZoneInfo(config.calendar.timezone)
 
 
 def _parse_time(value: str) -> str:
@@ -21,8 +24,9 @@ def _parse_time(value: str) -> str:
     if "T" in value and len(value) >= 19:
         return value
 
-    now = datetime.now()
-    tz_offset = "+08:00"  # Asia/Taipei
+    now = datetime.now(tz=_tz)
+    tz_offset = now.strftime("%z")
+    tz_offset = tz_offset[:3] + ":" + tz_offset[3:]  # "+0800" -> "+08:00"
 
     # Try common formats first
     for fmt in ["%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M"]:

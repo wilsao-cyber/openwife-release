@@ -27,6 +27,7 @@ class LLMConfig(BaseSettings):
     model: str = "smart7"
     temperature: float = 0.7
     max_tokens: int = 2048
+    api_key: str = ""
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -40,6 +41,7 @@ class TTSConfig(BaseSettings):
     sample_rate: int = 22050
     voicebox_api_url: str = "http://localhost:17493"
     voicebox_profile_id: str = ""
+    voicebox_horny_profile_id: str = ""
 
 
 class STTConfig(BaseSettings):

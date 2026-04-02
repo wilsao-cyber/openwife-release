@@ -16,8 +16,18 @@ class LLMClient:
         self.config = config
         self.base_url = config.base_url
         self.model = config.model
+        self.provider = config.provider
+        self.api_key = config.api_key
         self.client = httpx.AsyncClient(timeout=300.0)
-        self._is_ollama = "11434" in self.base_url or "9090" in self.base_url
+
+    @property
+    def _is_ollama(self) -> bool:
+        return self.provider == "ollama"
+
+    def _auth_headers(self) -> dict:
+        if self.api_key:
+            return {"Authorization": f"Bearer {self.api_key}"}
+        return {}
 
     async def chat(
         self,
@@ -117,6 +127,9 @@ class LLMClient:
         }
         if tools:
             payload["tools"] = tools
+        # DashScope Qwen3+ requires enable_thinking for non-streaming
+        if self.provider == "dashscope" and not stream:
+            payload["enable_thinking"] = False
         if stream:
             return self._openai_stream(payload)
         return await self._openai_complete(payload)
@@ -128,6 +141,7 @@ class LLMClient:
                 response = await self.client.post(
                     f"{self.base_url}/v1/chat/completions",
                     json=payload,
+                    headers=self._auth_headers(),
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -149,25 +163,39 @@ class LLMClient:
         raise last_error or Exception("LLM request failed after all retries")
 
     async def _openai_stream(self, payload: dict) -> AsyncGenerator[str, None]:
+        headers = self._auth_headers()
+        url = f"{self.base_url}/v1/chat/completions"
+        logger.info(f"OpenAI stream: {url}, model={payload.get('model')}, auth={'Bearer ***' + self.api_key[-4:] if self.api_key else 'none'}")
         try:
             async with self.client.stream(
-                "POST",
-                f"{self.base_url}/v1/chat/completions",
-                json=payload,
+                "POST", url, json=payload, headers=headers,
             ) as response:
-                response.raise_for_status()
+                if response.status_code != 200:
+                    body = await response.aread()
+                    logger.error(f"OpenAI stream HTTP {response.status_code}: {body.decode()[:300]}")
+                    yield f"[Error: API returned {response.status_code}]"
+                    return
                 async for line in response.aiter_lines():
                     if line.startswith("data: "):
                         data = line[6:]
                         if data == "[DONE]":
                             break
-                        chunk = json.loads(data)
-                        content = chunk["choices"][0]["delta"].get("content", "")
+                        try:
+                            chunk = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        choices = chunk.get("choices")
+                        if not choices:
+                            # DashScope content moderation or empty response
+                            logger.warning(f"Stream chunk missing 'choices': {data[:200]}")
+                            continue
+                        delta = choices[0].get("delta", {})
+                        content = delta.get("content") or ""
                         if content:
                             yield content
         except Exception as e:
             logger.error(f"OpenAI stream failed: {e}")
-            raise
+            yield f"[Error: {str(e)[:100]}]"
 
     async def switch_model(self, new_model: str):
         old_model = self.model
@@ -191,6 +219,15 @@ class LLMClient:
             except Exception as e:
                 logger.error(f"Failed to load {new_model}: {e}")
                 raise
+
+    def update_provider(self, provider: str, base_url: str, api_key: str, model: str):
+        self.provider = provider
+        self.base_url = base_url
+        self.api_key = api_key
+        self.model = model
+        logger.info(
+            f"Provider switched: {provider} @ {base_url}, model={model}"
+        )
 
     async def close(self):
         await self.client.aclose()

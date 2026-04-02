@@ -135,7 +135,7 @@ async def lifespan(app: FastAPI):
 
     # Phase 2: TTS Engine
     progress.begin("TTS Engine")
-    tts_engine = TTSEngine(config.tts)
+    tts_engine = TTSEngine(config.tts, llm_client=llm_client)
     try:
         await tts_engine.initialize()
         progress.ok(f"{config.tts.provider}")
@@ -408,9 +408,12 @@ async def api_stt(audio: UploadFile = File(...)):
 async def api_tts(data: dict):
     text = data.get("text", "")
     language = data.get("language", config.languages.default)
-    audio_path, _ = await tts_engine.synthesize(text, language)
-    full_path = f"./output/audio/{audio_path}"
-    return FileResponse(full_path, media_type="audio/wav")
+    emotion = data.get("emotion", "neutral")
+    audio_path, _, ja_text = await tts_engine.synthesize(text, language, emotion)
+    return {
+        "audio_url": f"/audio/{audio_path}",
+        "ja_text": ja_text,
+    }
 
 
 @app.get("/audio/{filename}")
@@ -428,7 +431,11 @@ async def get_model(filename: str):
 
 @app.get("/")
 async def web_index():
-    return FileResponse("static/index.html", media_type="text/html")
+    return FileResponse(
+        "static/index.html",
+        media_type="text/html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -458,6 +465,7 @@ async def health_test():
 
     # Test LLM
     try:
+        logger.info(f"Health test LLM: provider={llm_client.provider}, model={llm_client.model}, has_key={bool(llm_client.api_key)}")
         t0 = time.time()
         reply = await llm_client.chat(
             [{"role": "user", "content": "回覆OK"}],
@@ -468,16 +476,22 @@ async def health_test():
         results["llm"] = {
             "ok": True,
             "model": llm_client.model,
+            "provider": llm_client.provider,
             "latency_ms": latency,
             "reply": str(reply)[:30],
         }
     except Exception as e:
         results["llm"] = {"ok": False, "error": str(e)[:100]}
 
-    # Test TTS
+    # Test TTS (just check connectivity, don't do full synthesis)
     try:
-        await tts_engine.synthesize("測試", "zh-TW")
-        results["tts"] = {"ok": True, "provider": config.tts.provider}
+        import httpx as _hx
+        async with _hx.AsyncClient(timeout=5.0) as _tc:
+            _tr = await _tc.get(f"{config.tts.voicebox_api_url}/profiles")
+            if _tr.status_code == 200:
+                results["tts"] = {"ok": True, "provider": config.tts.provider}
+            else:
+                results["tts"] = {"ok": False, "error": f"Voicebox returned {_tr.status_code}"}
     except Exception as e:
         results["tts"] = {"ok": False, "error": str(e)[:100]}
 
@@ -522,6 +536,47 @@ async def list_models():
         if k in ("smart7", "smart9", "ultra")
     ]
     return {"models": models, "current": config.llm.model}
+
+
+@app.get("/api/config/provider")
+async def get_provider():
+    return {
+        "provider": config.llm.provider,
+        "base_url": config.llm.base_url,
+        "model": config.llm.model,
+        "has_api_key": bool(config.llm.api_key),
+    }
+
+
+@app.post("/api/config/provider")
+async def set_provider(data: dict):
+    provider = data.get("provider", "").strip()
+    base_url = data.get("base_url", "").strip()
+    api_key = data.get("api_key", "").strip()
+    model = data.get("model", "").strip()
+
+    if not provider or not base_url or not model:
+        return {"success": False, "error": "provider, base_url, model are required"}
+
+    if provider != "ollama" and not api_key:
+        return {"success": False, "error": "api_key is required for non-ollama providers"}
+
+    logger.info(f"set_provider: provider={provider}, base_url={base_url}, model={model}, api_key={'***' + api_key[-4:] if api_key else 'empty'}")
+
+    try:
+        llm_client.update_provider(provider, base_url, api_key, model)
+        config.llm.provider = provider
+        config.llm.base_url = base_url
+        config.llm.api_key = api_key
+        config.llm.model = model
+        return {
+            "success": True,
+            "provider": provider,
+            "base_url": base_url,
+            "model": model,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/api/health")
@@ -584,17 +639,14 @@ async def api_health_test():
             results["llm"] = {"ok": False, "error": str(e)[:100]}
     else:
         results["llm"] = {"ok": False, "error": "not initialized"}
-    # TTS test
-    if tts_engine:
-        try:
-            t0 = time.time()
-            path, _ = await tts_engine.synthesize("測試", config.languages.default)
-            latency = int((time.time() - t0) * 1000)
-            results["tts"] = {"ok": bool(path), "latency_ms": latency}
-        except Exception as e:
-            results["tts"] = {"ok": False, "error": str(e)[:100]}
-    else:
-        results["tts"] = {"ok": False, "error": "not initialized"}
+    # TTS test (connectivity check only, no full synthesis)
+    try:
+        import httpx as _hx2
+        async with _hx2.AsyncClient(timeout=5.0) as _tc2:
+            _tr2 = await _tc2.get(f"{config.tts.voicebox_api_url}/profiles")
+            results["tts"] = {"ok": _tr2.status_code == 200, "provider": config.tts.provider}
+    except Exception as e:
+        results["tts"] = {"ok": False, "error": str(e)[:100]}
     # STT test
     results["stt"] = {"ok": stt_engine is not None}
     return results
