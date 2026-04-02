@@ -546,6 +546,86 @@ async def list_models():
     return {"models": models, "current": config.llm.model}
 
 
+@app.get("/api/config/provider-models")
+async def list_provider_models(provider: str = "", base_url: str = "", api_key: str = ""):
+    """Fetch available models from a cloud provider."""
+    import httpx
+
+    try:
+        if provider == "ollama":
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                r = await client.get(f"{base_url or 'http://localhost:9090'}/api/tags")
+                if r.status_code == 200:
+                    data = r.json()
+                    return {"models": [
+                        {"id": m["name"], "name": m["name"], "context": m.get("details", {}).get("parameter_size", "")}
+                        for m in data.get("models", [])
+                    ]}
+            return {"models": [], "error": "Ollama not running"}
+
+        elif provider == "openrouter":
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get("https://openrouter.ai/api/v1/models")
+                if r.status_code == 200:
+                    data = r.json()
+                    models = []
+                    for m in data.get("data", []):
+                        mid = m.get("id", "")
+                        pricing = m.get("pricing", {})
+                        prompt_price = pricing.get("prompt", "0")
+                        is_free = ":free" in mid or prompt_price == "0"
+                        models.append({
+                            "id": mid,
+                            "name": m.get("name", mid),
+                            "context": m.get("context_length", 0),
+                            "free": is_free,
+                        })
+                    # Sort: free first, then by name
+                    models.sort(key=lambda x: (not x["free"], x["name"]))
+                    return {"models": models}
+            return {"models": [], "error": "Failed to fetch"}
+
+        elif provider == "dashscope":
+            # DashScope doesn't have a model list API, return known models
+            return {"models": [
+                {"id": "qwen3-235b-a22b", "name": "Qwen3 235B MoE", "context": 131072, "free": False},
+                {"id": "qwen3-32b", "name": "Qwen3 32B", "context": 131072, "free": False},
+                {"id": "qwen3-8b", "name": "Qwen3 8B", "context": 131072, "free": False},
+                {"id": "qwen-plus", "name": "Qwen Plus", "context": 131072, "free": False},
+                {"id": "qwen-turbo", "name": "Qwen Turbo", "context": 131072, "free": False},
+                {"id": "qwen-max", "name": "Qwen Max", "context": 32768, "free": False},
+                {"id": "qwen2.5-72b-instruct", "name": "Qwen2.5 72B", "context": 131072, "free": False},
+                {"id": "qwen2.5-32b-instruct", "name": "Qwen2.5 32B", "context": 131072, "free": False},
+            ]}
+
+        elif provider == "openai":
+            if not api_key:
+                return {"models": [
+                    {"id": "gpt-4o", "name": "GPT-4o", "context": 128000, "free": False},
+                    {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "context": 128000, "free": False},
+                    {"id": "gpt-4.1", "name": "GPT-4.1", "context": 1047576, "free": False},
+                    {"id": "gpt-4.1-mini", "name": "GPT-4.1 Mini", "context": 1047576, "free": False},
+                    {"id": "gpt-4.1-nano", "name": "GPT-4.1 Nano", "context": 1047576, "free": False},
+                ]}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    return {"models": [
+                        {"id": m["id"], "name": m["id"], "context": 0, "free": False}
+                        for m in data.get("data", [])
+                        if "gpt" in m["id"] or "o1" in m["id"] or "o3" in m["id"]
+                    ]}
+            return {"models": [], "error": "Failed to fetch"}
+
+        return {"models": []}
+    except Exception as e:
+        return {"models": [], "error": str(e)[:100]}
+
+
 @app.get("/api/config/provider")
 async def get_provider():
     return {

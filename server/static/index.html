@@ -358,7 +358,10 @@
     <div id="setup-cloud-fields" style="display:none;">
       <div class="setup-field">
         <label>雲端模型</label>
-        <input id="setup-cloud-model" type="text" list="model-suggestions" placeholder="qwen3-235b-a22b" style="width:100%;padding:8px;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
+        <input id="setup-cloud-model-search" type="text" placeholder="搜尋模型..." style="width:100%;padding:8px;margin-bottom:4px;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
+        <select id="setup-cloud-model" size="6" style="width:100%;padding:4px;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;overflow-y:auto;">
+          <option value="">載入中...</option>
+        </select>
       </div>
       <div class="setup-field">
         <label>API Key</label>
@@ -373,7 +376,10 @@
         <option value="dashscope">DashScope</option>
         <option value="openai">OpenAI</option>
       </select>
-      <input id="setup-fallback-model" type="text" list="model-suggestions" placeholder="qwen/qwen3.6-plus:free" style="width:100%;padding:8px;margin:4px 0;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
+      <input id="setup-fallback-model-search" type="text" placeholder="搜尋模型..." style="width:100%;padding:8px;margin:4px 0;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
+      <select id="setup-fallback-model" size="4" style="width:100%;padding:4px;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;overflow-y:auto;">
+        <option value="">選擇 Fallback provider 後載入</option>
+      </select>
       <input id="setup-fallback-key" type="password" placeholder="Fallback API Key" style="width:100%;padding:8px;margin:4px 0;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
     </div>
     <div class="setup-field">
@@ -1458,30 +1464,83 @@ function loadProviderKeys(provider) {
   };
 }
 
+// Fetch and populate model list for a provider
+var _allModels = {}; // cache per provider
+async function loadModelList(provider, selectEl, searchEl) {
+  // Clear with DOM methods
+  while (selectEl.firstChild) selectEl.removeChild(selectEl.firstChild);
+  const loadingOpt = document.createElement('option');
+  loadingOpt.value = '';
+  loadingOpt.textContent = '載入中...';
+  selectEl.appendChild(loadingOpt);
+  try {
+    const r = await fetch('/api/config/provider-models?provider=' + encodeURIComponent(provider));
+    const data = await r.json();
+    const models = data.models || [];
+    _allModels[provider] = models;
+    populateModelSelect(models, selectEl, '');
+    const saved = loadProviderKeys(provider);
+    if (saved.model) selectEl.value = saved.model;
+  } catch (e) {
+    while (selectEl.firstChild) selectEl.removeChild(selectEl.firstChild);
+    const errOpt = document.createElement('option');
+    errOpt.value = '';
+    errOpt.textContent = '載入失敗';
+    selectEl.appendChild(errOpt);
+  }
+}
+
+function populateModelSelect(models, selectEl, filter) {
+  const q = filter.toLowerCase();
+  const filtered = q ? models.filter(m => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q)) : models;
+  while (selectEl.firstChild) selectEl.removeChild(selectEl.firstChild);
+  if (filtered.length === 0) {
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '無匹配結果';
+    selectEl.appendChild(noneOpt);
+    return;
+  }
+  filtered.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    const badge = m.free ? '🆓 ' : '';
+    const ctx = m.context ? ' (' + Math.round(m.context/1024) + 'K)' : '';
+    opt.textContent = badge + m.name + ctx;
+    selectEl.appendChild(opt);
+  });
+}
+
+// Search filters
+document.getElementById('setup-cloud-model-search').addEventListener('input', (e) => {
+  const models = _allModels[setupProvider.value] || [];
+  populateModelSelect(models, document.getElementById('setup-cloud-model'), e.target.value);
+});
+document.getElementById('setup-fallback-model-search').addEventListener('input', (e) => {
+  const fbProv = document.getElementById('setup-fallback-provider').value;
+  const models = _allModels[fbProv] || [];
+  populateModelSelect(models, document.getElementById('setup-fallback-model'), e.target.value);
+});
+
 setupProvider.addEventListener('change', () => {
   const isCloud = setupProvider.value !== 'ollama';
   setupCloudFields.style.display = isCloud ? 'block' : 'none';
   setupLocalModelField.style.display = isCloud ? 'none' : 'block';
   document.getElementById('setup-fallback-fields').style.display = isCloud ? 'block' : 'none';
   if (isCloud) {
-    // Save current provider keys before switching
-    const prev = setupApiKey.value.trim();
-    const prevModel = setupCloudModel.value.trim();
-    // Load stored keys for new provider
     const saved = loadProviderKeys(setupProvider.value);
-    setupCloudModel.value = saved.model;
     setupApiKey.value = saved.key;
     setupApiKey.placeholder = saved.key ? '已儲存 ✓' : 'sk-...';
+    loadModelList(setupProvider.value, document.getElementById('setup-cloud-model'), document.getElementById('setup-cloud-model-search'));
   }
 });
 
-// Same for fallback provider
 document.getElementById('setup-fallback-provider').addEventListener('change', () => {
   const fbProv = document.getElementById('setup-fallback-provider').value;
   if (fbProv) {
     const saved = loadProviderKeys(fbProv);
-    document.getElementById('setup-fallback-model').value = saved.model || CLOUD_DEFAULT_MODELS[fbProv] || '';
     document.getElementById('setup-fallback-key').value = saved.key;
+    loadModelList(fbProv, document.getElementById('setup-fallback-model'), document.getElementById('setup-fallback-model-search'));
   }
 });
 
@@ -1491,9 +1550,10 @@ const savedApiKey = localStorage.getItem('ai-wife-api-key');
 const savedCloudModel = localStorage.getItem('ai-wife-cloud-model');
 if (savedProvider && savedProvider !== 'ollama') {
   setupProvider.value = savedProvider;
+  // Trigger change to show cloud fields + load model list
   setupProvider.dispatchEvent(new Event('change'));
-  if (savedCloudModel) setupCloudModel.value = savedCloudModel;
   if (savedApiKey) setupApiKey.value = savedApiKey;
+  // Model will be restored inside loadModelList via loadProviderKeys
 }
 
 function showToast(msg, duration = 3000) {
