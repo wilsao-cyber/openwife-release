@@ -107,7 +107,10 @@ class MCPDesktopControl:
             },
         )
         self._initialized = True
-        await self._send_request("notifications/initialized")
+        # Send notification (no id, no response expected)
+        notification = json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n"
+        self._process.stdin.write(notification.encode())
+        await self._process.stdin.drain()
         logger.info("MCP session initialized")
         return result
 
