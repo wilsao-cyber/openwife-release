@@ -1718,10 +1718,12 @@ if (savedLang) {
   setupLang.value = savedLang;
   langSel.value = savedLang;
 }
+// ── Model Selector ──────────────────────────────────────────────────
+const modelSelector = document.getElementById('model-selector');
+
 // Restore cloud model in top selector
 if (savedProvider && savedProvider !== 'ollama' && savedCloudModel) {
   const cloudVal = 'cloud:' + savedCloudModel;
-  // Add option if not in list
   if (!modelSelector.querySelector(`option[value="${cloudVal}"]`)) {
     const opt = document.createElement('option');
     opt.value = cloudVal;
@@ -1739,9 +1741,6 @@ if (_sfbp) {
   if (_sfbk) document.getElementById('setup-fallback-key').value = _sfbk;
   if (_sfbm) document.getElementById('setup-fallback-model').value = _sfbm;
 }
-
-// ── Model Selector ──────────────────────────────────────────────────
-const modelSelector = document.getElementById('model-selector');
 modelSelector.addEventListener('change', async () => {
   const val = modelSelector.value;
   modelOverlay.classList.add('show');
@@ -1836,8 +1835,8 @@ const lightbox = document.getElementById('lightbox');
 const lbImg = document.getElementById('lightbox-img');
 const lbRichtext = document.getElementById('lightbox-richtext');
 const lbNav = document.getElementById('lightbox-nav');
-let lbItems = [];
-let lbIndex = 0;
+var lbItems = [];
+var lbIndex = 0;
 
 function openLightbox(items, index) {
   lbItems = items; lbIndex = index || 0;

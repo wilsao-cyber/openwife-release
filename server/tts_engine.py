@@ -249,12 +249,18 @@ class TTSEngine:
         # Translate to Japanese for voice synthesis
         ja_text = await self._translate_to_ja(clean_text, language, emotion)
         # Replace ～ with ー to avoid TTS glitch
+        # Clean special characters that cause TTS glitch
+        import re as _re_clean
         ja_text = ja_text.replace("～", "ー")
-        logger.info(f"TTS text (ja): {ja_text[:80]}...")
-
-        # Split into sentences for consistent pacing
-        # Remove ellipsis before splitting (causes voice fade/glitch)
         ja_text = ja_text.replace("…", "、").replace("...", "、")
+        ja_text = ja_text.replace("♡", "").replace("♪", "").replace("☆", "").replace("★", "")
+        ja_text = ja_text.replace("→", "").replace("←", "").replace("↑", "").replace("↓", "")
+        ja_text = ja_text.replace("《", "").replace("》", "").replace("【", "").replace("】", "")
+        ja_text = ja_text.replace("「", "").replace("」", "").replace("『", "").replace("』", "")
+        ja_text = ja_text.replace("（", "").replace("）", "").replace("(", "").replace(")", "")
+        ja_text = _re_clean.sub(r'[*#_`~|<>{}\\\/\[\]]', '', ja_text)  # markdown/code symbols
+        ja_text = _re_clean.sub(r'\s+', ' ', ja_text).strip()
+        logger.info(f"TTS text (ja): {ja_text[:80]}...")
         # Split on sentence-ending punctuation only
         raw = _re.split(r'(?<=[。！？])\s*', ja_text)
         raw = [s.strip() for s in raw if s.strip() and len(s.strip()) > 1]
