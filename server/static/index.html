@@ -396,6 +396,15 @@
 </div>
 
 <div id="toast"></div>
+
+<div id="lightbox">
+  <span id="lightbox-close">&times;</span>
+  <span class="lb-arrow" id="lb-prev">&#10094;</span>
+  <span class="lb-arrow" id="lb-next">&#10095;</span>
+  <img id="lightbox-img" style="display:none;">
+  <div id="lightbox-richtext" style="display:none;"></div>
+  <div id="lightbox-nav"></div>
+</div>
 <div id="model-switch-overlay"><div class="spinner"></div><span>切換模型中...</span></div>
 
 <div id="settings-modal" class="hidden">
@@ -1047,13 +1056,15 @@ async function sendMessage() {
                       try {
                         const cEvt = JSON.parse(cJson);
                         if (cEvt.type === 'tool_result') {
-                          // Only show errors silently in a small badge
                           const r = cEvt.result;
                           if (r && r.error) {
                             const badge = document.createElement('div');
                             badge.style.cssText = 'font-size:11px;color:#f44336;margin:4px 0;padding:4px 8px;background:rgba(255,0,0,0.1);border-radius:6px;';
                             badge.textContent = `⚠️ ${cEvt.tool}: ${r.error.substring(0, 80)}`;
                             toolResultsContainer.appendChild(badge);
+                          }
+                          if (r && r.media) {
+                            renderMediaInChat(toolResultsContainer, r.media);
                           }
                         } else if (cEvt.type === 'chunk') {
                           confirmText += cEvt.data;
@@ -1900,15 +1911,5 @@ function renderMediaInChat(container, media) {
   });
 }
 </script>
-
-<div id="lightbox">
-  <span id="lightbox-close">&times;</span>
-  <span class="lb-arrow" id="lb-prev">&#10094;</span>
-  <span class="lb-arrow" id="lb-next">&#10095;</span>
-  <img id="lightbox-img" style="display:none;">
-  <div id="lightbox-richtext" style="display:none;"></div>
-  <div id="lightbox-nav"></div>
-</div>
-
 </body>
 </html>
