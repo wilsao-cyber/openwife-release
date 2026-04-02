@@ -253,8 +253,10 @@ class TTSEngine:
         logger.info(f"TTS text (ja): {ja_text[:80]}...")
 
         # Split into sentences for consistent pacing
-        # Split on sentence-ending punctuation and ellipsis
-        raw = _re.split(r'(?<=[。！？…])\s*', ja_text)
+        # Remove ellipsis before splitting (causes voice fade/glitch)
+        ja_text = ja_text.replace("…", "、").replace("...", "、")
+        # Split on sentence-ending punctuation only
+        raw = _re.split(r'(?<=[。！？])\s*', ja_text)
         raw = [s.strip() for s in raw if s.strip() and len(s.strip()) > 1]
         # Merge short fragments (< 12 chars) into previous sentence
         sentences = []
