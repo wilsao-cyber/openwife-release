@@ -1883,31 +1883,8 @@ const observer = new MutationObserver((mutations) => {
 });
 observer.observe(setupScreen, { attributes: true });
 
-// ── Auto-enter if previously completed ──────────────────────────────
-const hasProvider = savedProvider && savedProvider !== 'ollama' && localStorage.getItem('ai-wife-api-key');
-const hasLocal = savedModel && savedLang;
-if (hasProvider || hasLocal) {
-  setupScreen.classList.add('hidden');
-  // Auto-apply saved provider on reload
-  if (hasProvider) {
-    const _ak = localStorage.getItem('ai-wife-api-key') || '';
-    const _cm = localStorage.getItem('ai-wife-cloud-model') || '';
-    const _bu = CLOUD_BASE_URLS[savedProvider] || '';
-    if (_ak && _cm && _bu) {
-      fetch('/api/config/provider', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: savedProvider, base_url: _bu, api_key: _ak, model: _cm,
-          fallback_provider: localStorage.getItem('ai-wife-fb-provider') || '',
-          fallback_base_url: CLOUD_BASE_URLS[localStorage.getItem('ai-wife-fb-provider')] || '',
-          fallback_api_key: localStorage.getItem('ai-wife-fb-key') || '',
-          fallback_model: localStorage.getItem('ai-wife-fb-model') || '',
-        }),
-      }).catch(() => {});
-    }
-  }
-}
+// ── Always show setup screen on reload ──────────────────────────────
+// Saved values are pre-filled but user must click through setup every time
 
 setTimeout(() => {
   showGreeting('老公～歡迎回來！今天想跟小愛聊什麼呢？');
