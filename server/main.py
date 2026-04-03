@@ -644,6 +644,34 @@ async def tts_restart():
         return {"ok": False, "error": str(e)}
 
 
+@app.post("/api/sfx/upload")
+async def sfx_upload(
+    files: list[UploadFile] = File(...),
+    category: str = "custom",
+):
+    """Upload SFX audio files to the library."""
+    from sfx_catalog import sfx_catalog, SFX_ROOT
+    from pathlib import Path
+    import shutil
+
+    target_dir = SFX_ROOT / "custom" / category
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    uploaded = []
+    for f in files:
+        if not f.filename:
+            continue
+        dst = target_dir / f.filename
+        content = await f.read()
+        with open(dst, "wb") as out:
+            out.write(content)
+        uploaded.append(f.filename)
+
+    # Rebuild catalog to include new files
+    sfx_catalog.build()
+    return {"uploaded": uploaded, "total": len(sfx_catalog.entries)}
+
+
 @app.get("/api/sfx/{sfx_id}")
 async def get_sfx(sfx_id: str):
     """Serve SFX audio file by catalog ID."""

@@ -511,6 +511,7 @@
       <button class="tab-btn" data-tab="tab-heartbeat">定時任務</button>
       <button class="tab-btn" data-tab="tab-provider">LLM 供應商</button>
       <button class="tab-btn" data-tab="tab-voice">語音</button>
+      <button class="tab-btn" data-tab="tab-sfx">音效</button>
       <button class="tab-btn" data-tab="tab-render">渲染</button>
     </div>
     <div class="tab-body active" id="tab-memory">
@@ -592,6 +593,31 @@
           <button id="tts-kill-btn" style="flex:1;padding:8px;background:rgba(255,80,80,0.2);color:#ff6b6b;border:1px solid rgba(255,80,80,0.3);border-radius:6px;cursor:pointer;font-size:11px;">強制停止</button>
           <button id="tts-restart-btn" style="flex:1;padding:8px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:11px;">重新啟動</button>
         </div>
+      </div>
+    </div>
+    <div class="tab-body" id="tab-sfx">
+      <label style="color:var(--accent);font-size:13px;font-weight:bold;">🔊 音效素材庫</label>
+      <div id="sfx-stats" style="color:var(--text-muted);font-size:11px;margin:6px 0;">載入中...</div>
+      <div style="margin:10px 0;border-top:1px solid var(--glass-border);padding-top:10px;">
+        <label style="color:var(--text-secondary);font-size:11px;">上傳音效檔案（WAV/MP3/OGG/FLAC）</label>
+        <input id="sfx-upload-file" type="file" accept=".wav,.mp3,.ogg,.flac,.m4a" multiple style="width:100%;margin:6px 0;font-size:11px;color:var(--text-primary);">
+        <div style="display:flex;gap:8px;margin:6px 0;">
+          <input id="sfx-upload-category" type="text" placeholder="分類（如：環境音、親密音效）" style="flex:1;padding:6px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;box-sizing:border-box;">
+          <button id="sfx-upload-btn" style="padding:6px 14px;background:var(--accent);color:var(--bg-primary);border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;">上傳</button>
+        </div>
+        <div id="sfx-upload-status" style="color:var(--text-muted);font-size:11px;margin:4px 0;"></div>
+      </div>
+      <div style="margin:10px 0;border-top:1px solid var(--glass-border);padding-top:10px;">
+        <label style="color:var(--text-secondary);font-size:11px;">搜尋/試聽</label>
+        <div style="display:flex;gap:8px;margin:6px 0;">
+          <input id="sfx-search-input" type="text" placeholder="搜尋音效（如：雨、手コキ、ベッド）" style="flex:1;padding:6px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;box-sizing:border-box;">
+          <button id="sfx-search-btn" style="padding:6px 14px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:11px;">搜尋</button>
+        </div>
+        <div id="sfx-results" style="max-height:200px;overflow-y:auto;"></div>
+      </div>
+      <div style="margin:10px 0;border-top:1px solid var(--glass-border);padding-top:10px;">
+        <label style="color:var(--text-secondary);font-size:11px;">分類一覽</label>
+        <div id="sfx-categories" style="font-size:11px;color:var(--text-muted);margin:6px 0;"></div>
       </div>
     </div>
     <div class="tab-body" id="tab-render">
@@ -2078,6 +2104,68 @@ async function loadProviderSettings() {
     }
   } catch (e) { console.error('Load keys failed', e); }
 }
+
+// SFX management
+async function loadSfxInfo() {
+  try {
+    const resp = await fetch('/api/sfx');
+    if (resp.ok) {
+      const data = await resp.json();
+      const cats = data.categories || {};
+      const total = Object.values(cats).reduce((a, b) => a + b, 0);
+      document.getElementById('sfx-stats').textContent = `已索引 ${total} 個音效，${Object.keys(cats).length} 個分類`;
+      const catEl = document.getElementById('sfx-categories');
+      catEl.innerHTML = Object.entries(cats).map(([k, v]) => `<span style="display:inline-block;padding:2px 8px;margin:2px;background:var(--accent-muted);border-radius:8px;">${k} (${v})</span>`).join('');
+    }
+  } catch (e) { document.getElementById('sfx-stats').textContent = '無法載入音效目錄'; }
+}
+
+document.getElementById('sfx-upload-btn').onclick = async () => {
+  const btn = document.getElementById('sfx-upload-btn');
+  const files = document.getElementById('sfx-upload-file').files;
+  const category = document.getElementById('sfx-upload-category').value.trim() || 'custom';
+  const status = document.getElementById('sfx-upload-status');
+  if (!files.length) { status.textContent = '請選擇檔案'; return; }
+  btn.disabled = true; btn.textContent = '上傳中...';
+  const formData = new FormData();
+  for (const f of files) formData.append('files', f);
+  formData.append('category', category);
+  try {
+    const resp = await fetch('/api/sfx/upload', { method: 'POST', body: formData });
+    const data = await resp.json();
+    status.textContent = `✓ 已上傳 ${data.uploaded?.length || 0} 個檔案，目錄共 ${data.total} 個音效`;
+    document.getElementById('sfx-upload-file').value = '';
+    loadSfxInfo();
+  } catch (e) { status.textContent = '❌ 上傳失敗: ' + e.message; }
+  finally { btn.disabled = false; btn.textContent = '上傳'; }
+};
+
+document.getElementById('sfx-search-btn').onclick = async () => {
+  const query = document.getElementById('sfx-search-input').value.trim();
+  const resultsEl = document.getElementById('sfx-results');
+  if (!query) { resultsEl.innerHTML = ''; return; }
+  try {
+    const resp = await fetch(`/api/sfx?q=${encodeURIComponent(query)}`);
+    const data = await resp.json();
+    const results = data.results || [];
+    if (!results.length) { resultsEl.innerHTML = '<div style="padding:6px;color:var(--text-muted);">找不到相關音效</div>'; return; }
+    resultsEl.innerHTML = results.map(r =>
+      `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--glass-border);">
+        <button onclick="new Audio('/api/sfx/${r.id}').play()" style="background:none;border:none;cursor:pointer;font-size:14px;">▶</button>
+        <span style="flex:1;font-size:11px;color:var(--text-primary);">${r.description}</span>
+        <span style="font-size:10px;color:var(--text-muted);">${r.category}</span>
+      </div>`
+    ).join('');
+  } catch (e) { resultsEl.innerHTML = '❌ 搜尋失敗'; }
+};
+
+// Load SFX info when tab is opened
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  const orig = btn.onclick;
+  btn.addEventListener('click', (e) => {
+    if (e.target.dataset.tab === 'tab-sfx') loadSfxInfo();
+  });
+});
 
 document.getElementById('save-keys-btn').onclick = async () => {
   const btn = document.getElementById('save-keys-btn');
