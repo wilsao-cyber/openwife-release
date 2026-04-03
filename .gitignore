@@ -59,4 +59,4 @@ Thumbs.db
 /output/**/*.gltf
 /output/**/*.vrm
 /output/**/*.obj
-*.egg-info/
+*.egg-info/.superpowers/
