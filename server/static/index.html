@@ -92,11 +92,12 @@
     font-size: 13px; color: var(--accent-light); font-weight: 600; margin-right: 4px;
   }
   select {
-    background: var(--accent-muted); color: var(--text-primary);
-    border: none; padding: 4px 8px; border-radius: 10px; outline: none;
+    background: rgba(42, 45, 62, 0.8); color: #f2d7d5;
+    border: 1px solid rgba(212, 165, 165, 0.2); padding: 4px 8px; border-radius: 10px; outline: none;
     font-size: 12px; cursor: pointer;
   }
-  select:hover { background: rgba(212, 165, 165, 0.25); }
+  select:hover { background: rgba(42, 45, 62, 0.95); border-color: var(--accent); }
+  select option { background: #2a2d3e; color: #f2d7d5; }
   #tts-toggle { cursor: pointer; font-size: 12px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--glass-border); background: none; color: var(--text-secondary); margin-left: 2px; }
   #tts-toggle.on { color: var(--accent); border-color: var(--accent); }
 
@@ -378,19 +379,7 @@
       <option value="en">English</option>
     </select>
     <button id="tts-toggle" class="on" title="語音開關">🔊</button>
-    <select id="model-selector" title="切換模型">
-      <optgroup label="本機 Ollama">
-        <option value="smart7">Qwen 2.5 7B</option>
-        <option value="smart9">Qwen 3.5 9B</option>
-        <option value="ultra">Qwen 3.5 27B</option>
-      </optgroup>
-      <optgroup label="☁️ 雲端">
-        <option value="cloud:qwen3-235b-a22b">Qwen3 235B MoE</option>
-        <option value="cloud:qwen3-32b">Qwen3 32B</option>
-        <option value="cloud:qwen-plus">Qwen Plus</option>
-        <option value="cloud:qwen-turbo">Qwen Turbo</option>
-      </optgroup>
-    </select>
+    <span id="model-display" style="font-size:11px;color:var(--text-muted);padding:2px 8px;background:var(--accent-muted);border-radius:10px;cursor:default;" title="在設定中切換模型">📡</span>
   </div>
   <div id="loading"><div class="spinner"></div><span>Loading model...</span></div>
   <div id="error"></div>
@@ -1862,6 +1851,7 @@ enterBtn.addEventListener('click', async () => {
   enterBtn.textContent = '進入 💕';
   enterBtn.disabled = false;
   showToast('歡迎回來 💕');
+  updateModelDisplay();
   // Play welcome TTS (user just clicked, so autoplay is allowed)
   if (welcomeAudioUrl && ttsEnabled) {
     setTimeout(() => {
@@ -1882,80 +1872,31 @@ if (savedLang) {
   setupLang.value = savedLang;
   langSel.value = savedLang;
 }
-// ── Model Selector ──────────────────────────────────────────────────
-const modelSelector = document.getElementById('model-selector');
+// ── Model Display (top bar) ──────────────────────────────────────────
+const modelDisplay = document.getElementById('model-display');
+function updateModelDisplay() {
+  const prov = localStorage.getItem('ai-wife-provider') || 'ollama';
+  const model = localStorage.getItem('ai-wife-cloud-model') || localStorage.getItem('ai-wife-model') || '';
+  const short = model.length > 20 ? model.substring(model.lastIndexOf('/') + 1).substring(0, 18) : model;
+  if (modelDisplay) modelDisplay.textContent = '📡 ' + (short || 'N/A');
+}
+updateModelDisplay();
 
-// Restore cloud model in top selector
-if (savedProvider && savedProvider !== 'ollama' && savedCloudModel) {
-  const cloudVal = 'cloud:' + savedCloudModel;
-  if (!modelSelector.querySelector(`option[value="${cloudVal}"]`)) {
-    const opt = document.createElement('option');
-    opt.value = cloudVal;
-    opt.textContent = '☁️ ' + savedCloudModel;
-    modelSelector.querySelector('optgroup:last-child').appendChild(opt);
-  }
-  modelSelector.value = cloudVal;
-}
-// Restore fallback
+// Restore fallback (only if previously saved)
 const _sfbp = localStorage.getItem('ai-wife-fb-provider');
-const _sfbk = localStorage.getItem('ai-wife-fb-key');
-const _sfbm = localStorage.getItem('ai-wife-fb-model');
 if (_sfbp) {
-  document.getElementById('setup-fallback-provider').value = _sfbp;
+  const fbSelect = document.getElementById('setup-fallback-provider');
+  fbSelect.value = _sfbp;
+  const _sfbk = localStorage.getItem('ai-wife-fb-key');
   if (_sfbk) document.getElementById('setup-fallback-key').value = _sfbk;
-  if (_sfbm) document.getElementById('setup-fallback-model').value = _sfbm;
-}
-modelSelector.addEventListener('change', async () => {
-  const val = modelSelector.value;
-  modelOverlay.classList.add('show');
-  try {
-    if (val.startsWith('cloud:')) {
-      const cloudModel = val.replace('cloud:', '');
-      const savedKey = localStorage.getItem('ai-wife-api-key') || '';
-      const savedProv = localStorage.getItem('ai-wife-provider') || 'dashscope';
-      if (!savedKey) {
-        showToast('請先在設定頁輸入 API Key');
-        modelOverlay.classList.remove('show');
-        return;
-      }
-      const res = await fetch('/api/config/provider', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: savedProv,
-          base_url: CLOUD_BASE_URLS[savedProv],
-          api_key: savedKey,
-          model: cloudModel,
-        }),
-      });
-      const data = await res.json();
-      showToast(data.success ? `已切換至 ☁️ ${cloudModel}` : '切換失敗: ' + data.error);
-    } else {
-      // Switch back to Ollama local
-      const res = await fetch('/api/config/provider', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: 'ollama',
-          base_url: 'http://localhost:9090',
-          api_key: '',
-          model: val,
-        }),
-      });
-      await res.json();
-      const res2 = await fetch('/api/config/model', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: val }),
-      });
-      const data = await res2.json();
-      showToast(data.success ? `已切換至 🖥️ ${data.model}` : '切換失敗');
-    }
-  } catch (e) {
-    showToast('切換失敗: ' + e.message);
+  // Trigger change to load model list
+  fbSelect.dispatchEvent(new Event('change'));
+  // Restore model after list loads
+  const _sfbm = localStorage.getItem('ai-wife-fb-model');
+  if (_sfbm) {
+    setTimeout(() => { document.getElementById('setup-fallback-model').value = _sfbm; }, 2000);
   }
-  modelOverlay.classList.remove('show');
-});
+}
 
 // ── Return to Setup from Settings ───────────────────────────────────
 // Add a "回到起始畫面" button in settings
