@@ -554,10 +554,17 @@
       <button id="save-provider-btn" style="margin-top:10px;width:100%;padding:10px;background:var(--accent);color:var(--bg-primary);border:none;border-radius:6px;cursor:pointer;font-weight:600;">套用設定</button>
     </div>
     <div class="tab-body" id="tab-render">
-      <label style="color:var(--accent);font-size:13px;font-weight:bold;margin-bottom:12px;display:block;">🎨 渲染設定</label>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <label style="color:var(--accent);font-size:13px;font-weight:bold;">🎨 渲染設定</label>
+        <select id="render-preset-select" style="flex:1;padding:4px 8px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;">
+        </select>
+      </div>
       <div id="render-sliders" style="display:flex;flex-direction:column;gap:10px;">
       </div>
-      <button id="reset-render-btn" style="margin-top:12px;width:100%;padding:8px;background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:12px;">重置為預設值</button>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button id="reset-render-btn" style="flex:1;padding:8px;background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:12px;">重置</button>
+        <button id="save-preset-btn" style="flex:1;padding:8px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:12px;">存為新模式</button>
+      </div>
     </div>
   </div>
 </div>
@@ -2069,15 +2076,27 @@ if (_sfbp) {
 }
 
 // ── Render Settings Panel ────────────────────────────────────────────
-const RENDER_DEFAULTS = {
-  exposure: 1.2, brightness: 0.95, contrast: 1.1, saturation: 1.2, sepia: 0.05,
-  ambientR: 1.0, ambientG: 0.85, ambientB: 0.75, ambientInt: 0.8,
-  spotInt: 2.0, rimInt: 0.5,
-  customLightOn: 0, customLightInt: 2.0,
-  customLightR: 1.0, customLightG: 0.9, customLightB: 0.8,
-  customLightX: 0, customLightY: 2.0, customLightZ: 2.0,
-  shadeWarm: 0.3, shadingToony: 0.8, rimFresnelPower: 3.0, rimLift: 0.3,
+const RENDER_PRESETS = {
+  '預設': {
+    exposure: 1.2, brightness: 0.95, contrast: 1.1, saturation: 1.2, sepia: 0.05,
+    ambientR: 1.0, ambientG: 0.85, ambientB: 0.75, ambientInt: 0.8,
+    spotInt: 2.0, rimInt: 0.5,
+    customLightOn: 0, customLightInt: 2.0,
+    customLightR: 1.0, customLightG: 0.9, customLightB: 0.8,
+    customLightX: 0, customLightY: 2.0, customLightZ: 2.0,
+    shadeWarm: 0.3, shadingToony: 0.8, rimFresnelPower: 3.0, rimLift: 0.3,
+  },
+  '模式 1 — 暖色動漫': {
+    exposure: 0.85, brightness: 1.3, contrast: 0.85, saturation: 1.7, sepia: 0.26,
+    ambientR: 1, ambientG: 0, ambientB: 0, ambientInt: 0.7,
+    spotInt: 0, rimInt: 1.6,
+    customLightOn: 1, customLightInt: 3,
+    customLightR: 1, customLightG: 1, customLightB: 1,
+    customLightX: 5, customLightY: 6, customLightZ: 5,
+    shadeWarm: 0.3, shadingToony: 0.75, rimFresnelPower: 6, rimLift: 0.1,
+  },
 };
+const RENDER_DEFAULTS = RENDER_PRESETS['預設'];
 var customLight = null;
 var renderSettings = JSON.parse(localStorage.getItem('ai-wife-render') || 'null') || {...RENDER_DEFAULTS};
 
@@ -2191,15 +2210,60 @@ function applyRenderSettings() {
   }
 }
 
+// Load user-saved presets from localStorage
+var userPresets = JSON.parse(localStorage.getItem('ai-wife-render-presets') || '{}');
+var allPresets = {...RENDER_PRESETS, ...userPresets};
+
+function buildPresetSelect() {
+  const sel = document.getElementById('render-preset-select');
+  while (sel.firstChild) sel.removeChild(sel.firstChild);
+  Object.keys(allPresets).forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    sel.appendChild(opt);
+  });
+  // Add "自訂" option for current unsaved state
+  const customOpt = document.createElement('option');
+  customOpt.value = '__custom__';
+  customOpt.textContent = '— 自訂 —';
+  sel.appendChild(customOpt);
+  sel.value = '__custom__';
+}
+
+document.getElementById('render-preset-select').addEventListener('change', (e) => {
+  const name = e.target.value;
+  if (name === '__custom__') return;
+  const preset = allPresets[name];
+  if (preset) {
+    renderSettings = {...preset};
+    localStorage.setItem('ai-wife-render', JSON.stringify(renderSettings));
+    buildRenderUI();
+    applyRenderSettings();
+  }
+});
+
 document.getElementById('reset-render-btn').addEventListener('click', () => {
   renderSettings = {...RENDER_DEFAULTS};
-  localStorage.removeItem('ai-wife-render');
+  localStorage.setItem('ai-wife-render', JSON.stringify(renderSettings));
+  document.getElementById('render-preset-select').value = '預設';
   buildRenderUI();
   applyRenderSettings();
 });
 
+document.getElementById('save-preset-btn').addEventListener('click', () => {
+  const name = prompt('模式名稱：');
+  if (!name || !name.trim()) return;
+  userPresets[name.trim()] = {...renderSettings};
+  allPresets[name.trim()] = {...renderSettings};
+  localStorage.setItem('ai-wife-render-presets', JSON.stringify(userPresets));
+  buildPresetSelect();
+  document.getElementById('render-preset-select').value = name.trim();
+  showToast('已儲存：' + name.trim());
+});
+
+buildPresetSelect();
 buildRenderUI();
-// Apply saved render settings on load
 setTimeout(applyRenderSettings, 1000);
 
 // ── Return to Setup from Settings ───────────────────────────────────
