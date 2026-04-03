@@ -50,9 +50,6 @@ fi
 echo "[3/3] AI Wife App Server..."
 cd "$PROJECT_DIR/server"
 source venv/bin/activate
-nohup python main.py > "$PROJECT_DIR/logs/server.log" 2>&1 &
-echo $! > "$PROJECT_DIR/logs/server.pid"
-echo "  ✓ Started (PID: $(cat "$PROJECT_DIR/logs/server.pid"))"
 
 echo "================================================"
 echo "🌸 All services started!"
@@ -60,10 +57,11 @@ echo "   Web UI: http://localhost:8000"
 echo "   Voicebox: http://localhost:17493"
 echo "   SearXNG: http://localhost:8080"
 echo ""
-echo "   Logs: $PROJECT_DIR/logs/"
-echo "   Stop: $PROJECT_DIR/stop.sh"
+echo "   Press Ctrl+C to stop server"
 echo "================================================"
 
 # Open browser
-sleep 2
-xdg-open http://localhost:8000 2>/dev/null || true
+(sleep 2 && xdg-open http://localhost:8000 2>/dev/null) &
+
+# Run server in foreground (keeps terminal open)
+python main.py 2>&1 | tee "$PROJECT_DIR/logs/server.log"
