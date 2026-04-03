@@ -16,32 +16,26 @@ class SfxSkill(BaseSkill):
                 "function": {
                     "name": "sfx_play",
                     "description": (
-                        "効果音を再生する (Play sound effects alongside voice). "
-                        "Use this to enhance immersion during intimate scenes, daily life, or ambient moments. "
-                        "Available categories: "
-                        "環境音 (rain, nature, wind), "
-                        "動作系 (actions, doors, footsteps), "
-                        "衣服・布・ベッド (clothing rustling, bedsheet sounds), "
-                        "生活音 (daily life, cooking, typing), "
-                        "お風呂系 (bath, shower, water), "
-                        "耳かき系 (ear cleaning ASMR), "
-                        "エッチな生活音 (intimate daily sounds), "
-                        "ローション (lotion sounds), "
-                        "ローション手コキ (lotion handjob sounds), "
-                        "ピストン音 (piston/thrusting sounds), "
-                        "射精音 (ejaculation sounds). "
-                        "Describe the mood or specific sound in Japanese."
+                        "効果音を再生する (Play sound effects). "
+                        "Use semantic tags for accuracy. Available tags:\n"
+                        "Intimate: handjob_slow, handjob_fast, handjob_irregular, handjob_buildup, "
+                        "lotion_apply, lotion_bottle, piston_slow, piston_fast, piston_wet, piston_dry, "
+                        "ejaculation, ejaculation_heavy, squirt, onahole, condom, tissue\n"
+                        "Fabric: bedsheet, clothes_rustle, zipper\n"
+                        "Environment: rain, rain_heavy, rain_light\n"
+                        "Daily: typing, gaming, bath_water, shower, ear_cleaning\n"
+                        "Action: door, footstep, kiss, heartbeat, breathing"
                     ),
                     "parameters": {
                         "type": "object",
                         "properties": {
+                            "tag": {
+                                "type": "string",
+                                "description": "Semantic tag (e.g., 'handjob_slow', 'rain', 'bedsheet', 'piston_fast')",
+                            },
                             "description": {
                                 "type": "string",
-                                "description": "What sound to play (e.g., '雨の音', 'ベッドのきしむ音', 'ゆっくりした手コキ')",
-                            },
-                            "category": {
-                                "type": "string",
-                                "description": "Optional: specific category name",
+                                "description": "Fallback: free-text description if no tag matches",
                             },
                             "loop": {
                                 "type": "boolean",
@@ -68,12 +62,12 @@ class SfxSkill(BaseSkill):
 
     async def execute(self, tool_name: str, **kwargs) -> dict:
         if tool_name == "sfx_play":
+            tag = kwargs.get("tag", "")
             query = kwargs.get("description", "")
-            category = kwargs.get("category", "")
             loop = kwargs.get("loop", False)
             volume = kwargs.get("volume", 0.3)
 
-            results = sfx_catalog.search(query=query, category=category, limit=3)
+            results = sfx_catalog.search(tag=tag, query=query, limit=3)
             if not results:
                 return {"content": "No matching sound effects found."}
 

@@ -1705,7 +1705,7 @@ async function sendMessage() {
                     const resp = await fetch('/api/tts', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ text: ttsText, language: langSel.value, emotion: ttsEmotion }),
+                      body: JSON.stringify({ text: ttsText, language: langSel.value, emotion: ttsEmotion, mix_sfx: true }),
                     });
                     if (resp.ok) {
                       const data = await resp.json();

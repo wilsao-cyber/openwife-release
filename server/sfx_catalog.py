@@ -115,12 +115,41 @@ class SfxCatalog:
 
         logger.info(f"SFX catalog built: {len(self.entries)} entries, {len(self.by_category)} categories")
 
-    def search(self, query: str = "", category: str = "", limit: int = 5) -> list[SfxEntry]:
-        """Search catalog by query string and/or category."""
+    def search_by_tag(self, tag: str, limit: int = 3) -> list[SfxEntry]:
+        """Search by semantic tag from sfx_tags.py. Most accurate method."""
+        from sfx_tags import TAG_PATTERNS
+        patterns = TAG_PATTERNS.get(tag, [])
+        if not patterns:
+            return self.search(query=tag, limit=limit)
+
+        scored = []
+        for entry in self.entries.values():
+            text = entry.filename + " " + entry.description + " " + entry.category
+            score = 0
+            for pat in patterns:
+                if re.search(pat, text):
+                    score += 20
+            if score > 0:
+                if entry.is_binaural:
+                    score += 2
+                scored.append((score, entry))
+        scored.sort(key=lambda x: -x[0])
+        return [e for _, e in scored[:limit]]
+
+    def search(self, query: str = "", category: str = "", tag: str = "", limit: int = 5) -> list[SfxEntry]:
+        """Search catalog by semantic tag, query string, and/or category."""
+        # Prefer semantic tag search if provided
+        if tag:
+            return self.search_by_tag(tag, limit)
+
+        # Check if query matches a known tag name
+        from sfx_tags import TAG_PATTERNS
+        if query in TAG_PATTERNS:
+            return self.search_by_tag(query, limit)
+
         candidates = []
 
         if category:
-            # Exact or substring match on category
             for cat, entries in self.by_category.items():
                 if category in cat or cat in category:
                     candidates.extend(entries)
@@ -132,21 +161,19 @@ class SfxCatalog:
 
         # Score by query match against tags and description
         scored = []
-        query_lower = query.lower()
         query_parts = [q.strip() for q in re.split(r'[\s　、]+', query) if q.strip()]
 
         for entry in candidates:
             score = 0
-            text = (entry.description + " " + " ".join(entry.tags) + " " + entry.category).lower()
+            text = (entry.description + " " + " ".join(entry.tags) + " " + entry.category)
             for qp in query_parts:
-                if qp.lower() in text:
+                if qp in text:
                     score += 10
-                # Partial match
-                for tag in entry.tags:
-                    if qp.lower() in tag.lower() or tag.lower() in qp.lower():
+                for t in entry.tags:
+                    if qp in t or t in qp:
                         score += 3
             if entry.is_binaural:
-                score += 1  # prefer binaural
+                score += 1
             if score > 0:
                 scored.append((score, entry))
 

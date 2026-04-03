@@ -143,12 +143,12 @@ async def mix_scene(
                     timeline = _mix_into(timeline, looped, sfx_start, active_sfx_volume)
 
         elif step_type == "sfx":
+            tag = step.get("tag", "")
             query = step.get("query", "")
-            category = step.get("category", "")
             volume = step.get("volume", 0.5)
             fade_in_s = step.get("fade_in", 0.5)
 
-            results = sfx_catalog.search(query=query, category=category, limit=1)
+            results = sfx_catalog.search(tag=tag, query=query, limit=1)
             if not results:
                 logger.warning(f"SFX not found: {query}")
                 continue

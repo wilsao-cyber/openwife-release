@@ -16,15 +16,17 @@ class SceneSkill(BaseSkill):
                 "function": {
                     "name": "scene_play",
                     "description": (
-                        "創建沉浸式音頻場景，將語音和效果音混合成一個音檔播放。"
-                        "適合親密場景、故事敘述、ASMR 等需要音效搭配的情境。\n"
-                        "script 是一個 JSON 陣列，每個元素是一個步驟：\n"
-                        '- {"type":"speech","text":"要說的台詞"} — 生成語音\n'
-                        '- {"type":"sfx","query":"效果音描述","volume":0.3} — 開始播放效果音（持續到 sfx_stop）\n'
-                        '- {"type":"pause","duration":5} — 暫停 N 秒（效果音繼續播放）\n'
-                        '- {"type":"sfx_stop"} — 停止效果音\n'
-                        "效果音類別：環境音、衣服・布・ベッド、ローション手コキ、ピストン音、射精音、お風呂系、生活音\n"
-                        "範例：親密場景可以先 speech 說話 → sfx 開始背景音 → pause 讓音效持續 → speech 再說話 → sfx 切換更激烈的音效"
+                        "創建沉浸式音頻場景，將語音和效果音混合成一個音檔播放。\n"
+                        "script 陣列步驟：\n"
+                        '- {"type":"speech","text":"台詞"}\n'
+                        '- {"type":"sfx","tag":"semantic_tag","volume":0.3} — 用 tag 指定效果音\n'
+                        '- {"type":"pause","duration":5} — 暫停 N 秒（效果音持續）\n'
+                        '- {"type":"sfx_stop"}\n'
+                        "可用 tags:\n"
+                        "handjob_slow, handjob_fast, handjob_irregular, handjob_buildup, "
+                        "lotion_apply, lotion_bottle, piston_slow, piston_fast, piston_wet, "
+                        "ejaculation, ejaculation_heavy, squirt, bedsheet, clothes_rustle, "
+                        "rain, rain_light, kiss, heartbeat, breathing, shower, ear_cleaning"
                     ),
                     "parameters": {
                         "type": "object",
