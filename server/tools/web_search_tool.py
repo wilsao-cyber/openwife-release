@@ -96,6 +96,33 @@ class WebSearchTool:
             logger.error(f"Brave search failed: {e}")
             return {"error": str(e), "query": query}
 
+    async def search_images(self, query: str, num_results: int = 5) -> dict:
+        """Search for images using SearXNG."""
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(
+                    f"{self.searxng_url}/search",
+                    params={"q": query, "format": "json", "categories": "images", "pageno": 1},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+            raw = data.get("results", [])[:num_results]
+            media = []
+            results = []
+            for item in raw:
+                img_url = item.get("img_src", "")
+                title = item.get("title", "")
+                source_url = item.get("url", "")
+                if img_url:
+                    media.append({"type": "image", "url": img_url, "alt": title})
+                    results.append({"title": title, "image_url": img_url, "source_url": source_url})
+
+            return {"results": results, "total": len(results), "query": query, "media": media}
+        except Exception as e:
+            logger.error(f"Image search failed: {e}")
+            return {"error": str(e), "query": query}
+
     async def fetch_page_content(self, url: str) -> dict:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
