@@ -585,6 +585,19 @@ class AgentOrchestrator:
             "scene",
             "親密場景",
             "互動",
+            "打手槍",
+            "幫我弄",
+            "口交",
+            "做愛",
+            "sex",
+            "幫我擼",
+            "舔",
+            "吸",
+            "插",
+            "抱我",
+            "摸我",
+            "親我",
+            "脫",
         ]
 
     def _classify_intent_fast(self, message: str) -> str:
