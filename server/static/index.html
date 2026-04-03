@@ -101,6 +101,12 @@
   }
   select:hover { background: rgba(42, 45, 62, 0.95); border-color: var(--accent); }
   select option { background: #2a2d3e; color: #f2d7d5; }
+  .render-slider-row { display: flex; align-items: center; gap: 8px; }
+  .render-slider-row label { font-size: 11px; color: var(--text-secondary); width: 90px; flex-shrink: 0; }
+  .render-slider-row input[type=range] { flex: 1; accent-color: var(--accent); height: 4px; }
+  .render-slider-row .slider-val { font-size: 10px; color: var(--text-muted); width: 35px; text-align: right; }
+  .render-section { font-size: 11px; color: var(--accent); font-weight: 600; margin-top: 8px; margin-bottom: 4px; padding-bottom: 2px; border-bottom: 1px solid var(--glass-border); }
+
   #tts-toggle { cursor: pointer; font-size: 12px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--glass-border); background: none; color: var(--text-secondary); margin-left: 2px; }
   #tts-toggle.on { color: var(--accent); border-color: var(--accent); }
 
@@ -500,6 +506,7 @@
       <button class="tab-btn" data-tab="tab-soul">核心靈魂</button>
       <button class="tab-btn" data-tab="tab-heartbeat">定時任務</button>
       <button class="tab-btn" data-tab="tab-provider">LLM 供應商</button>
+      <button class="tab-btn" data-tab="tab-render">渲染</button>
     </div>
     <div class="tab-body active" id="tab-memory">
       <div id="memory-list">Loading...</div>
@@ -542,7 +549,13 @@
       <label style="color:#FF69B4;font-size:13px;font-weight:bold;">API Key</label>
       <input id="provider-api-key" type="password" placeholder="sk-..." style="width:100%;padding:8px;margin:8px 0;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
       <div id="provider-status" style="color:#aaa;font-size:12px;margin:4px 0;"></div>
-      <button id="save-provider-btn" style="margin-top:10px;width:100%;padding:10px;background:#FF69B4;color:white;border:none;border-radius:6px;cursor:pointer;">套用設定</button>
+      <button id="save-provider-btn" style="margin-top:10px;width:100%;padding:10px;background:var(--accent);color:var(--bg-primary);border:none;border-radius:6px;cursor:pointer;font-weight:600;">套用設定</button>
+    </div>
+    <div class="tab-body" id="tab-render">
+      <label style="color:var(--accent);font-size:13px;font-weight:bold;margin-bottom:12px;display:block;">🎨 渲染設定</label>
+      <div id="render-sliders" style="display:flex;flex-direction:column;gap:10px;">
+      </div>
+      <button id="reset-render-btn" style="margin-top:12px;width:100%;padding:8px;background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:12px;">重置為預設值</button>
     </div>
   </div>
 </div>
@@ -2052,6 +2065,114 @@ if (_sfbp) {
     setTimeout(() => { document.getElementById('setup-fallback-model').value = _sfbm; }, 2000);
   }
 }
+
+// ── Render Settings Panel ────────────────────────────────────────────
+const RENDER_DEFAULTS = {
+  exposure: 1.2, brightness: 0.95, contrast: 1.1, saturation: 1.2, sepia: 0.05,
+  ambientR: 1.0, ambientG: 0.85, ambientB: 0.75, ambientInt: 0.8,
+  spotInt: 2.0, rimInt: 0.5,
+  shadeWarm: 0.3, shadingToony: 0.8, rimFresnelPower: 3.0, rimLift: 0.3,
+};
+var renderSettings = JSON.parse(localStorage.getItem('ai-wife-render') || 'null') || {...RENDER_DEFAULTS};
+
+const RENDER_SLIDERS = [
+  {section: '📷 後處理'},
+  {key: 'exposure', label: '曝光', min: 0.5, max: 2.5, step: 0.05},
+  {key: 'brightness', label: '亮度', min: 0.5, max: 1.5, step: 0.05},
+  {key: 'contrast', label: '對比度', min: 0.8, max: 1.5, step: 0.05},
+  {key: 'saturation', label: '飽和度', min: 0.5, max: 2.0, step: 0.05},
+  {key: 'sepia', label: '暖色調', min: 0, max: 0.3, step: 0.01},
+  {section: '💡 燈光'},
+  {key: 'ambientInt', label: '環境光強度', min: 0, max: 2.0, step: 0.1},
+  {key: 'ambientR', label: '環境光 R', min: 0, max: 1.0, step: 0.05},
+  {key: 'ambientG', label: '環境光 G', min: 0, max: 1.0, step: 0.05},
+  {key: 'ambientB', label: '環境光 B', min: 0, max: 1.0, step: 0.05},
+  {key: 'spotInt', label: '聚光燈強度', min: 0, max: 5.0, step: 0.1},
+  {key: 'rimInt', label: '邊緣光強度', min: 0, max: 2.0, step: 0.1},
+  {section: '🎨 材質 (MToon)'},
+  {key: 'shadeWarm', label: '陰影暖色', min: 0, max: 1.0, step: 0.05},
+  {key: 'shadingToony', label: 'Cel-shade 銳度', min: 0, max: 1.0, step: 0.05},
+  {key: 'rimFresnelPower', label: 'Rim Fresnel', min: 0.5, max: 10, step: 0.5},
+  {key: 'rimLift', label: 'Rim Lift', min: 0, max: 1.0, step: 0.05},
+];
+
+function buildRenderUI() {
+  const container = document.getElementById('render-sliders');
+  while (container.firstChild) container.removeChild(container.firstChild);
+  RENDER_SLIDERS.forEach(s => {
+    if (s.section) {
+      const sec = document.createElement('div');
+      sec.className = 'render-section';
+      sec.textContent = s.section;
+      container.appendChild(sec);
+      return;
+    }
+    const row = document.createElement('div');
+    row.className = 'render-slider-row';
+    const lbl = document.createElement('label');
+    lbl.textContent = s.label;
+    row.appendChild(lbl);
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = s.min; input.max = s.max; input.step = s.step;
+    input.value = renderSettings[s.key];
+    const val = document.createElement('span');
+    val.className = 'slider-val';
+    val.textContent = Number(renderSettings[s.key]).toFixed(2);
+    input.addEventListener('input', () => {
+      renderSettings[s.key] = parseFloat(input.value);
+      val.textContent = Number(input.value).toFixed(2);
+      applyRenderSettings();
+      localStorage.setItem('ai-wife-render', JSON.stringify(renderSettings));
+    });
+    row.appendChild(input);
+    row.appendChild(val);
+    container.appendChild(row);
+  });
+}
+
+function applyRenderSettings() {
+  const s = renderSettings;
+  // Post-processing CSS
+  const canvas = document.querySelector('#vrm-container canvas');
+  if (canvas) {
+    canvas.style.filter = `contrast(${s.contrast}) saturate(${s.saturation}) brightness(${s.brightness}) sepia(${s.sepia})`;
+  }
+  // Three.js
+  if (renderer) renderer.toneMappingExposure = s.exposure;
+  if (ambientLight) {
+    ambientLight.color.setRGB(s.ambientR, s.ambientG, s.ambientB);
+    ambientLight.intensity = s.ambientInt;
+  }
+  // Spot and rim (find by traversal)
+  scene.traverse(obj => {
+    if (obj.isSpotLight) obj.intensity = s.spotInt;
+    if (obj.isDirectionalLight && obj !== dirLight && obj !== ambientLight) {
+      obj.intensity = s.rimInt;
+    }
+  });
+  // MToon materials
+  if (currentVrm) {
+    currentVrm.scene.traverse(obj => {
+      if (!obj.isMesh || !obj.material || !obj.material.uniforms) return;
+      const u = obj.material.uniforms;
+      if (u.shadingToonyFactor) u.shadingToonyFactor.value = s.shadingToony;
+      if (u.parametricRimFresnelPowerFactor) u.parametricRimFresnelPowerFactor.value = s.rimFresnelPower;
+      if (u.parametricRimLiftFactor) u.parametricRimLiftFactor.value = s.rimLift;
+    });
+  }
+}
+
+document.getElementById('reset-render-btn').addEventListener('click', () => {
+  renderSettings = {...RENDER_DEFAULTS};
+  localStorage.removeItem('ai-wife-render');
+  buildRenderUI();
+  applyRenderSettings();
+});
+
+buildRenderUI();
+// Apply saved render settings on load
+setTimeout(applyRenderSettings, 1000);
 
 // ── Return to Setup from Settings ───────────────────────────────────
 // Add a "回到起始畫面" button in settings
