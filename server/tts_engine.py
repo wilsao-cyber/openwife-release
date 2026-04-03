@@ -254,22 +254,42 @@ class TTSEngine:
         ja_text = _re.sub(r'\s+', ' ', ja_text).strip()
         logger.info(f"TTS text (ja): {ja_text[:80]}...")
 
-        # Split on sentence-ending punctuation only
+        # Split on sentence-ending punctuation and clause boundaries
+        # Primary split: 。！？ (sentence end)
+        # Secondary split: 、 ー after 8+ chars (clause boundary for emotional pacing)
         raw = _re.split(r'(?<=[。！？])\s*', ja_text)
-        raw = [s.strip() for s in raw if s.strip() and len(s.strip()) > 1]
-        # Merge short fragments (< 12 chars) into previous sentence
+        # Further split long segments on clause boundaries
+        fine = []
+        for seg in raw:
+            seg = seg.strip()
+            if not seg or len(seg) <= 1:
+                continue
+            if len(seg) > 25:
+                # Split on 、 but keep the delimiter with the left part
+                parts = _re.split(r'(?<=、)', seg)
+                merged_part = ""
+                for p in parts:
+                    if merged_part and len(merged_part) >= 8:
+                        fine.append(merged_part)
+                        merged_part = p
+                    else:
+                        merged_part += p
+                if merged_part:
+                    fine.append(merged_part)
+            else:
+                fine.append(seg)
+        # Merge very short fragments (< 6 chars) into previous
         sentences = []
-        for s in raw:
-            if len(s) < 12 and sentences:
+        for s in fine:
+            s = s.strip()
+            if not s:
+                continue
+            if len(s) < 6 and sentences:
                 sentences[-1] += s
             else:
                 sentences.append(s)
         if not sentences:
             sentences = [ja_text]
-        # Ensure first segment is long enough (merge with second if too short)
-        while len(sentences) > 1 and len(sentences[0]) < 20:
-            sentences[0] = sentences[0] + sentences[1]
-            sentences.pop(1)
 
         instruct = self.EMOTION_INSTRUCT_MAP.get(emotion, self.EMOTION_INSTRUCT_MAP["neutral"])
 
