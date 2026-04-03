@@ -24,7 +24,7 @@ class SfxSkill(BaseSkill):
                         "Fabric: bedsheet, clothes_rustle, zipper\n"
                         "Environment: rain, rain_heavy, rain_light\n"
                         "Daily: typing, gaming, bath_water, shower, ear_cleaning\n"
-                        "Action: door, footstep, kiss, heartbeat, breathing"
+                        "Action: door, footstep, kiss"
                     ),
                     "parameters": {
                         "type": "object",

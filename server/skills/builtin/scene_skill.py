@@ -1,4 +1,3 @@
-import json
 import logging
 from skills.base_skill import BaseSkill
 
@@ -26,7 +25,7 @@ class SceneSkill(BaseSkill):
                         "handjob_slow, handjob_fast, handjob_irregular, handjob_buildup, "
                         "lotion_apply, lotion_bottle, piston_slow, piston_fast, piston_wet, "
                         "ejaculation, ejaculation_heavy, squirt, bedsheet, clothes_rustle, "
-                        "rain, rain_light, kiss, heartbeat, breathing, shower, ear_cleaning"
+                        "rain, rain_light, kiss, shower, ear_cleaning"
                     ),
                     "parameters": {
                         "type": "object",

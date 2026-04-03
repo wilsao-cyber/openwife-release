@@ -59,9 +59,8 @@ TAG_PATTERNS = {
     "door": ["ドア", "扉"],
     "footstep": ["足音", "歩"],
     "kiss": ["キス", "ちゅ"],
-    "heartbeat": ["心臓", "心拍", "ドキドキ"],
-    "breathing": ["吐息", "呼吸", "息"],
     "slap": ["平手", "ビンタ", "叩"],
+    # NOTE: heartbeat, breathing not in current library
 }
 
 # Semantic descriptions for LLM tool description (condensed)
@@ -96,6 +95,4 @@ TAG_DESCRIPTIONS = {
     "door": "ドア (door open/close)",
     "footstep": "足音 (footsteps)",
     "kiss": "キス (kissing)",
-    "heartbeat": "心拍 (heartbeat)",
-    "breathing": "吐息 (breathing)",
 }
