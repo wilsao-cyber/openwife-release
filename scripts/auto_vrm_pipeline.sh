@@ -10,7 +10,7 @@ echo ""
 # ============================
 # 配置
 # ============================
-INPUT_IMAGE="${1:-/home/wilsao6666/Pictures/post-image-33571620.jpeg}"
+INPUT_IMAGE="${1:-./input.png}"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 OUTPUT_DIR="$PROJECT_DIR/output/character"
 MODELS_DIR="$PROJECT_DIR/models/3d"

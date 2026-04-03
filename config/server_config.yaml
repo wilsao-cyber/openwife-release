@@ -18,10 +18,8 @@ llm:
 tts:
   provider: "voicebox"
   voicebox_api_url: "http://localhost:17493"
-  voicebox_profile_id: "dad0cb88-fa99-4e58-969d-e0bbeb80f34d"           # ayachi (RJ01175599)
-  # voicebox_profile_id: "0ebc00bb-04ab-4b85-9937-5321777edbce"       # omote (RJ01212922)
-  voicebox_horny_profile_id: "66d15d53-cf7a-4e04-a102-0280a03a0689"   # ayachi_horny (RJ01175599)
-  # voicebox_horny_profile_id: "c69b1cee-d852-4c03-9162-ee02a3791968" # omote_horny (RJ01212922)
+  voicebox_profile_id: ""           # set via UI after training
+  voicebox_horny_profile_id: ""   # set via UI after training
   voicebox_model_size: "1.7B"      # "1.7B" or "0.6B" — 0.6B is ~2x faster but lower quality
   voicebox_concurrency: 1           # sequential — Voicebox serializes GPU internally
   audio_fx_enabled: true             # emotion-based audio post-processing

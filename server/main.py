@@ -568,7 +568,7 @@ async def voice_test(data: dict):
 
     src = Path(gen.get("audio_path", ""))
     if not src.is_absolute():
-        src = Path(config.tts.voicebox_api_url.replace("http://localhost:17493", "/home/wilsao6666/voicebox")) / src
+        src = Path(config.tts.voicebox_api_url.replace("http://localhost:17493", os.path.expanduser("~/voicebox"))) / src
     if src.exists():
         dst = Path("./output/audio") / src.name
         shutil.copy2(str(src), str(dst))
@@ -621,7 +621,7 @@ async def tts_restart():
     try:
         proc = subprocess.Popen(
             ["bash", "-c",
-             "cd /home/wilsao6666/voicebox && source backend/venv/bin/activate && "
+             "cd ~/voicebox && source backend/venv/bin/activate && "
              "python -m backend.main --port 17493"],
             stdout=open("../logs/voicebox.log", "a"),
             stderr=subprocess.STDOUT,

@@ -1,6 +1,6 @@
 """
 SFX Catalog — indexes sound effect files at startup for LLM-driven playback.
-Scans /home/wilsao6666/Music/vfx/ directory tree, parses filenames into
+Scans sfx_library/ directory tree, parses filenames into
 searchable tags and descriptions.
 """
 

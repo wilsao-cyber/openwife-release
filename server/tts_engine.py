@@ -336,7 +336,7 @@ class TTSEngine:
 
         source = Path(data["audio_path"])
         if not source.is_absolute():
-            source = Path("/home/wilsao6666/voicebox") / source
+            source = Path(os.path.expanduser("~/voicebox")) / source
         if not source.exists():
             return None
 

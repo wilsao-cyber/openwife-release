@@ -29,7 +29,7 @@ echo "[2/3] Voicebox TTS..."
 if curl -s http://localhost:17493/profiles >/dev/null 2>&1; then
     echo "  ✓ Already running"
 else
-    cd /home/wilsao6666/voicebox
+    cd ~/voicebox
     source backend/venv/bin/activate
     nohup python -m backend.main --port 17493 > "$PROJECT_DIR/logs/voicebox.log" 2>&1 &
     echo $! > "$PROJECT_DIR/logs/voicebox.pid"
