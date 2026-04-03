@@ -1663,7 +1663,6 @@ async function sendMessage() {
                 ttsLoading.style.display = 'inline-block';
                 ttsBtn.classList.add('playing');
 
-                // Set callbacks for this message's stream
                 ttsOnJaText = (jaText) => {
                   cachedJaText = jaText;
                   jaDrawer.textContent = jaText;
@@ -1675,11 +1674,18 @@ async function sendMessage() {
                   ttsBtn.classList.remove('playing');
                   ttsGenerating = false;
                   ttsLoading.style.display = 'none';
-                  // Cache all audio URLs for replay
-                  cachedAudioUrls = audioQueue.filter(Boolean);
+                  // Cache from audioQueue (might already be cleared by stopTTS if user stopped)
+                  if (cachedAudioUrls.length === 0) {
+                    cachedAudioUrls = audioQueue.filter(Boolean);
+                  }
                 };
 
                 await playTTSStream(ttsText, ttsEmotion);
+                // After stream completes, cache whatever we got
+                // (this runs after all SSE events processed, audioQueue still has values)
+                if (cachedAudioUrls.length === 0) {
+                  cachedAudioUrls = audioQueue.filter(Boolean);
+                }
               }
 
               ttsBtn.onclick = () => {

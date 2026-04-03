@@ -290,6 +290,10 @@ class TTSEngine:
                 sentences.append(s)
         if not sentences:
             sentences = [ja_text]
+        # Cap at 5 sentences to prevent long TTS stalling
+        MAX_TTS_SENTENCES = 5
+        if len(sentences) > MAX_TTS_SENTENCES:
+            sentences = sentences[:MAX_TTS_SENTENCES]
 
         instruct = self.EMOTION_INSTRUCT_MAP.get(emotion, self.EMOTION_INSTRUCT_MAP["neutral"])
 
