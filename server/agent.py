@@ -578,6 +578,9 @@ class AgentOrchestrator:
             "聽聽",
             "放一些",
             "放點",
+            "再聽",
+            "再播",
+            "繼續播",
         ]
 
     def _classify_intent_fast(self, message: str) -> str:
