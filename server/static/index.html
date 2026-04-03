@@ -1066,6 +1066,15 @@ let currentAudio = null;
 let isPlaying = false;
 let ttsEnabled = localStorage.getItem('ai-wife-tts') !== 'off';
 
+// Streaming TTS state
+let streamAbortController = null;
+let audioQueue = [];
+let playIndex = 0;
+let streamDone = false;
+let ttsOnFirstAudio = null;  // callback when first audio segment ready
+let ttsOnJaText = null;      // callback when ja_text arrives
+let ttsOnComplete = null;    // callback when all done
+
 const ttsToggleBtn = document.getElementById('tts-toggle');
 ttsToggleBtn.className = ttsEnabled ? 'on' : '';
 ttsToggleBtn.textContent = ttsEnabled ? '🔊' : '🔇';
@@ -1074,25 +1083,133 @@ ttsToggleBtn.onclick = () => {
   localStorage.setItem('ai-wife-tts', ttsEnabled ? 'on' : 'off');
   ttsToggleBtn.className = ttsEnabled ? 'on' : '';
   ttsToggleBtn.textContent = ttsEnabled ? '🔊' : '🔇';
-  if (!ttsEnabled && currentAudio) { stopTTS(); }
+  if (!ttsEnabled) { stopTTS(); }
 };
 
+function playNext() {
+  if (playIndex >= audioQueue.length) {
+    if (streamDone) {
+      isPlaying = false;
+      currentAudio = null;
+      if (ttsOnComplete) ttsOnComplete();
+    }
+    return;
+  }
+  const url = audioQueue[playIndex];
+  if (!url) return; // not yet arrived — will be triggered on next 'audio' event
+
+  if (currentAudio) { currentAudio.pause(); }
+  currentAudio = new Audio(url);
+  isPlaying = true;
+  currentAudio.onended = () => {
+    playIndex++;
+    playNext();
+  };
+  currentAudio.onerror = () => {
+    console.warn('Audio segment ' + playIndex + ' failed, skipping');
+    playIndex++;
+    playNext();
+  };
+  currentAudio.play().catch(e => {
+    console.warn('Audio play blocked:', e);
+    playIndex++;
+    playNext();
+  });
+}
+
+async function playTTSStream(text, emotion = 'neutral') {
+  stopTTS();
+  const cleanText = text.replace(/\[emotion:\w+\]/g, '').trim();
+  if (!cleanText) return;
+
+  streamAbortController = new AbortController();
+  audioQueue = [];
+  playIndex = 0;
+  streamDone = false;
+  let sseBuffer = '';
+  let totalExpected = 0;
+  let playbackStarted = false;
+
+  try {
+    const resp = await fetch('/api/tts/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: cleanText, language: langSel.value, emotion }),
+      signal: streamAbortController.signal,
+    });
+    if (!resp.ok) return;
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      // Buffer TCP chunks — split on \n\n, keep incomplete tail
+      sseBuffer += decoder.decode(value, { stream: true });
+      const parts = sseBuffer.split('\n\n');
+      sseBuffer = parts.pop(); // incomplete tail stays in buffer
+
+      for (const block of parts) {
+        const dataLine = block.split('\n').find(l => l.startsWith('data: '));
+        if (!dataLine) continue;
+        let event;
+        try { event = JSON.parse(dataLine.slice(6)); } catch { continue; }
+
+        if (event.type === 'ja_text') {
+          if (ttsOnJaText) ttsOnJaText(event.data);
+        } else if (event.type === 'audio') {
+          totalExpected = event.total;
+          audioQueue[event.index] = event.url;
+          // Start playback: wait for min(2, total) buffered, or play immediately if only 1 sentence
+          const buffered = audioQueue.filter(Boolean).length;
+          if (!playbackStarted && buffered >= Math.min(2, totalExpected)) {
+            playbackStarted = true;
+            if (ttsOnFirstAudio) ttsOnFirstAudio();
+            playNext();
+          } else if (playbackStarted && playIndex < audioQueue.length && audioQueue[playIndex] && !isPlaying) {
+            // Underrun recovery: player was waiting, new audio arrived
+            playNext();
+          }
+        } else if (event.type === 'done' || event.type === 'cancelled') {
+          streamDone = true;
+          // If playback hasn't started yet (e.g., only 1 sentence arrived), start now
+          if (!playbackStarted && audioQueue.filter(Boolean).length > 0) {
+            playbackStarted = true;
+            if (ttsOnFirstAudio) ttsOnFirstAudio();
+            playNext();
+          } else if (isPlaying) {
+            // Let playNext handle completion when current audio ends
+          } else {
+            if (ttsOnComplete) ttsOnComplete();
+          }
+        } else if (event.type === 'error') {
+          console.error('TTS server error:', event.message);
+          streamDone = true;
+          if (ttsOnComplete) ttsOnComplete();
+        }
+      }
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') console.error('TTS stream error:', err);
+    streamDone = true;
+    if (ttsOnComplete) ttsOnComplete();
+  }
+}
+
+// Legacy non-streaming playTTS for pregenWelcomeTTS
 async function playTTS(text, emotion = 'neutral') {
   try {
-    if (currentAudio) {
-      currentAudio.pause();
-      currentAudio = null;
-    }
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     const cleanText = text.replace(/\[emotion:\w+\]/g, '').trim();
     if (!cleanText) return null;
-
     const resp = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: cleanText, language: langSel.value, emotion }),
     });
     if (!resp.ok) return null;
-
     const data = await resp.json();
     const audioResp = await fetch(data.audio_url);
     const blob = await audioResp.blob();
@@ -1109,11 +1226,21 @@ async function playTTS(text, emotion = 'neutral') {
 }
 
 function stopTTS() {
+  if (streamAbortController) {
+    streamAbortController.abort();
+    streamAbortController = null;
+  }
   if (currentAudio) {
     currentAudio.pause();
     currentAudio = null;
-    isPlaying = false;
   }
+  audioQueue = [];
+  playIndex = 0;
+  streamDone = false;
+  isPlaying = false;
+  ttsOnFirstAudio = null;
+  ttsOnJaText = null;
+  ttsOnComplete = null;
 }
 
 // ── UI Elements ──────────────────────────────────────────────────────
@@ -1443,44 +1570,52 @@ async function sendMessage() {
 
               const ttsText = fullText;
               const ttsEmotion = evt.emotion || 'neutral';
-              let cachedAudioUrl = null;
+              let cachedAudioUrls = [];
               let cachedJaText = null;
               let ttsGenerating = false;
 
-              function replayAudio() {
-                if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-                currentAudio = new Audio(cachedAudioUrl);
-                currentAudio.play();
-                isPlaying = true;
+              function replayFromCache() {
+                stopTTS();
+                audioQueue = [...cachedAudioUrls];
+                playIndex = 0;
+                streamDone = true;
                 ttsBtn.classList.add('playing');
-                currentAudio.onended = () => { isPlaying = false; currentAudio = null; ttsBtn.classList.remove('playing'); };
+                ttsOnComplete = () => { ttsBtn.classList.remove('playing'); };
+                playNext();
               }
 
               async function doPlayTTS() {
-                if (cachedAudioUrl) { replayAudio(); return; }
-                if (ttsGenerating) return; // prevent duplicate
+                if (cachedAudioUrls.length > 0) { replayFromCache(); return; }
+                if (ttsGenerating) return;
                 ttsGenerating = true;
                 ttsLoading.style.display = 'inline-block';
                 ttsBtn.classList.add('playing');
-                const result = await playTTS(ttsText, ttsEmotion);
-                ttsLoading.style.display = 'none';
-                ttsGenerating = false;
-                if (result) {
-                  cachedJaText = result;
-                  jaDrawer.textContent = result;
-                }
-                if (currentAudio) {
-                  cachedAudioUrl = currentAudio.src;
-                }
-                const checkEnd = setInterval(() => {
-                  if (!isPlaying) { ttsBtn.classList.remove('playing'); clearInterval(checkEnd); }
-                }, 300);
+
+                // Set callbacks for this message's stream
+                ttsOnJaText = (jaText) => {
+                  cachedJaText = jaText;
+                  jaDrawer.textContent = jaText;
+                };
+                ttsOnFirstAudio = () => {
+                  ttsLoading.style.display = 'none';
+                };
+                ttsOnComplete = () => {
+                  ttsBtn.classList.remove('playing');
+                  ttsGenerating = false;
+                  ttsLoading.style.display = 'none';
+                  // Cache all audio URLs for replay
+                  cachedAudioUrls = audioQueue.filter(Boolean);
+                };
+
+                await playTTSStream(ttsText, ttsEmotion);
               }
 
               ttsBtn.onclick = () => {
                 if (isPlaying && currentAudio) {
                   stopTTS();
                   ttsBtn.classList.remove('playing');
+                  ttsGenerating = false;
+                  ttsLoading.style.display = 'none';
                 } else {
                   doPlayTTS();
                 }

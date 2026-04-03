@@ -46,6 +46,8 @@ class TTSConfig(BaseSettings):
     voicebox_api_url: str = "http://localhost:17493"
     voicebox_profile_id: str = ""
     voicebox_horny_profile_id: str = ""
+    voicebox_model_size: str = "1.7B"
+    voicebox_concurrency: int = 2
 
 
 class STTConfig(BaseSettings):

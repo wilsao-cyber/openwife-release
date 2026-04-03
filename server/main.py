@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import asyncio
+import json
 import logging
 import time
 from typing import Optional
@@ -422,6 +423,30 @@ async def api_tts(data: dict):
         "audio_url": f"/audio/{audio_path}",
         "ja_text": ja_text,
     }
+
+
+@app.post("/api/tts/stream")
+async def tts_stream(data: dict):
+    """SSE streaming TTS — yields per-sentence audio URLs as they are generated."""
+    text = data.get("text", "")
+    language = data.get("language", config.languages.default)
+    emotion = data.get("emotion", "neutral")
+
+    async def event_gen():
+        try:
+            async for event in tts_engine.synthesize_stream(text, language, emotion):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.error(f"TTS SSE error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+        finally:
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/audio/{filename}")

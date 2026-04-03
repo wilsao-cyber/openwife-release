@@ -20,6 +20,8 @@ tts:
   voicebox_api_url: "http://localhost:17493"
   voicebox_profile_id: "23bcfffa-6263-4b3a-852d-9fde25c3fd38"
   voicebox_horny_profile_id: "b595fd1c-a1b4-44f3-9b93-244338a884ac"
+  voicebox_model_size: "1.7B"      # "1.7B" or "0.6B" — 0.6B is ~2x faster but lower quality
+  voicebox_concurrency: 2           # max concurrent Voicebox requests
   model_path: "./models/tts/cosyvoice"
   voice_sample_path: "./voice_samples"
   sample_rate: 22050

@@ -228,29 +228,21 @@ class TTSEngine:
                     trimmed = trim_silence(raw, inp.getsampwidth())
                     out.writeframes(trimmed)
 
-    async def _synthesize_voicebox(
-        self, text: str, language: str = "zh-TW", emotion: str = "neutral"
-    ) -> tuple[str, list[dict], str]:
-        """Synthesize speech using Voicebox API. Always synthesizes in Japanese.
-        Splits long text into sentences for consistent pacing.
-        Returns (audio_filename, visemes, ja_text)."""
-        import uuid
+    async def _prepare_tts(
+        self, text: str, language: str, emotion: str
+    ) -> tuple[str, list[str], str, str]:
+        """Shared preprocessing: translate, split sentences, build instruct.
+        Returns (ja_text, sentences, instruct, profile_id)."""
         import re as _re
-
-        output_filename = f"{uuid.uuid4()}.wav"
-        output_path = self.output_dir / output_filename
 
         # Strip emoji before translation
         clean_text = self._strip_emoji(text)
         if not clean_text:
-            result = await self._mock_synthesize(text, language)
-            return result[0], result[1], ""
+            return "", [], "", ""
 
         # Translate to Japanese for voice synthesis
         ja_text = await self._translate_to_ja(clean_text, language, emotion)
-        # Replace ～ with ー to avoid TTS glitch
         # Clean special characters that cause TTS glitch
-        import re as _re_clean
         ja_text = ja_text.replace("～", "ー")
         ja_text = ja_text.replace("…", "、").replace("...", "、")
         ja_text = ja_text.replace("♡", "").replace("♪", "").replace("☆", "").replace("★", "")
@@ -258,9 +250,10 @@ class TTSEngine:
         ja_text = ja_text.replace("《", "").replace("》", "").replace("【", "").replace("】", "")
         ja_text = ja_text.replace("「", "").replace("」", "").replace("『", "").replace("』", "")
         ja_text = ja_text.replace("（", "").replace("）", "").replace("(", "").replace(")", "")
-        ja_text = _re_clean.sub(r'[*#_`~|<>{}\\\/\[\]]', '', ja_text)  # markdown/code symbols
-        ja_text = _re_clean.sub(r'\s+', ' ', ja_text).strip()
+        ja_text = _re.sub(r'[*#_`~|<>{}\\\/\[\]]', '', ja_text)  # markdown/code symbols
+        ja_text = _re.sub(r'\s+', ' ', ja_text).strip()
         logger.info(f"TTS text (ja): {ja_text[:80]}...")
+
         # Split on sentence-ending punctuation only
         raw = _re.split(r'(?<=[。！？])\s*', ja_text)
         raw = [s.strip() for s in raw if s.strip() and len(s.strip()) > 1]
@@ -274,58 +267,163 @@ class TTSEngine:
         if not sentences:
             sentences = [ja_text]
         # Ensure first segment is long enough (merge with second if too short)
-        # Short first segments cause TTS cold-start glitches
         while len(sentences) > 1 and len(sentences[0]) < 20:
             sentences[0] = sentences[0] + sentences[1]
             sentences.pop(1)
 
         instruct = self.EMOTION_INSTRUCT_MAP.get(emotion, self.EMOTION_INSTRUCT_MAP["neutral"])
 
+        # Select profile based on emotion
+        if emotion == "horny" and self.config.voicebox_horny_profile_id:
+            profile_id = self.config.voicebox_horny_profile_id
+        else:
+            profile_id = self.config.voicebox_profile_id or ""
+
+        return ja_text, sentences, instruct, profile_id
+
+    async def _voicebox_generate_one(
+        self, client, sentence: str, profile_id: str, instruct: str
+    ) -> Optional[Path]:
+        """Generate a single sentence via Voicebox HTTP. Returns audio Path or None."""
+        import uuid
+
+        payload = {
+            "text": sentence,
+            "profile_id": profile_id,
+            "language": "ja",
+        }
+        if instruct:
+            payload["instruct"] = instruct
+        model_size = getattr(self.config, "voicebox_model_size", None)
+        if model_size:
+            payload["model_size"] = model_size
+
+        logger.info(f"Voicebox generating: {sentence[:40]}...")
         try:
-            import httpx
+            resp = await client.post(
+                f"{self.config.voicebox_api_url}/generate",
+                json=payload,
+            )
+            resp.raise_for_status()
+        except Exception as e:
+            logger.warning(f"Voicebox segment failed: {e}")
+            return None
 
-            # Select profile based on emotion
-            if emotion == "horny" and self.config.voicebox_horny_profile_id:
-                profile_id = self.config.voicebox_horny_profile_id
-            else:
-                profile_id = self.config.voicebox_profile_id or ""
+        data = resp.json()
+        if "audio_path" not in data:
+            return None
 
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                audio_parts = []
-                for sent in sentences:
-                    payload = {
-                        "text": sent,
-                        "profile_id": profile_id,
-                        "language": "ja",
-                    }
-                    if instruct:
-                        payload["instruct"] = instruct
-                    logger.info(f"Voicebox generating: {sent[:40]}...")
-                    try:
-                        resp = await client.post(
-                            f"{self.config.voicebox_api_url}/generate",
-                            json=payload,
+        source = Path(data["audio_path"])
+        if not source.is_absolute():
+            source = Path("/home/wilsao6666/voicebox") / source
+        if not source.exists():
+            return None
+
+        # Copy to output dir with unique name
+        import shutil
+        out_name = f"{uuid.uuid4()}.wav"
+        out_path = self.output_dir / out_name
+        shutil.copy2(str(source), str(out_path))
+        return out_path
+
+    async def synthesize_stream(
+        self, text: str, language: str = "zh-TW", emotion: str = "neutral"
+    ):
+        """Async generator yielding SSE event dicts for streaming TTS.
+        Uses parallel generation with ordered yield for minimal latency."""
+        import httpx
+
+        ja_text, sentences, instruct, profile_id = await self._prepare_tts(
+            text, language, emotion
+        )
+        if not sentences:
+            return
+
+        yield {"type": "ja_text", "data": ja_text}
+
+        concurrency = getattr(self.config, "voicebox_concurrency", 2)
+        semaphore = asyncio.Semaphore(concurrency)
+        results = [None] * len(sentences)
+        events = [asyncio.Event() for _ in sentences]
+
+        async def gen_one(idx, sent):
+            try:
+                async with semaphore:
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        results[idx] = await self._voicebox_generate_one(
+                            client, sent, profile_id, instruct
                         )
-                        resp.raise_for_status()
-                    except (httpx.TimeoutException, httpx.HTTPStatusError) as e:
-                        logger.warning(f"Voicebox segment skipped: {e}")
-                        continue
-                    data = resp.json()
-                    if "audio_path" in data:
-                        source = Path(data["audio_path"])
-                        if not source.is_absolute():
-                            source = Path("/home/wilsao6666/voicebox") / source
-                        if source.exists():
-                            audio_parts.append(source)
+            except Exception as e:
+                logger.error(f"Sentence {idx} generation failed: {e}")
+                results[idx] = None
+            finally:
+                events[idx].set()
 
-                if not audio_parts:
-                    raise RuntimeError("No audio generated")
+        # Launch all sentence generations concurrently (semaphore limits parallelism)
+        tasks = [asyncio.create_task(gen_one(i, s)) for i, s in enumerate(sentences)]
 
-                if len(audio_parts) == 1:
-                    import shutil
-                    shutil.copy2(str(audio_parts[0]), str(output_path))
-                else:
-                    self._concat_wav(audio_parts, output_path)
+        # Yield results in order — waits for each sentence's event before yielding
+        for i in range(len(sentences)):
+            await events[i].wait()
+            if results[i]:
+                yield {
+                    "type": "audio",
+                    "index": i,
+                    "url": f"/audio/{results[i].name}",
+                    "total": len(sentences),
+                }
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _synthesize_voicebox(
+        self, text: str, language: str = "zh-TW", emotion: str = "neutral"
+    ) -> tuple[str, list[dict], str]:
+        """Synthesize speech using Voicebox API (non-streaming path).
+        Returns (audio_filename, visemes, ja_text)."""
+        import uuid
+        import httpx
+
+        ja_text, sentences, instruct, profile_id = await self._prepare_tts(
+            text, language, emotion
+        )
+        if not sentences:
+            result = await self._mock_synthesize(text, language)
+            return result[0], result[1], ""
+
+        output_filename = f"{uuid.uuid4()}.wav"
+        output_path = self.output_dir / output_filename
+
+        try:
+            concurrency = getattr(self.config, "voicebox_concurrency", 2)
+            semaphore = asyncio.Semaphore(concurrency)
+            results = [None] * len(sentences)
+            events = [asyncio.Event() for _ in sentences]
+
+            async def gen_one(idx, sent):
+                try:
+                    async with semaphore:
+                        async with httpx.AsyncClient(timeout=120.0) as client:
+                            results[idx] = await self._voicebox_generate_one(
+                                client, sent, profile_id, instruct
+                            )
+                except Exception as e:
+                    logger.error(f"Sentence {idx} generation failed: {e}")
+                finally:
+                    events[idx].set()
+
+            tasks = [asyncio.create_task(gen_one(i, s)) for i, s in enumerate(sentences)]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+            audio_parts = [r for r in results if r is not None]
+
+            if not audio_parts:
+                raise RuntimeError("No audio generated")
+
+            if len(audio_parts) == 1:
+                import shutil
+                shutil.copy2(str(audio_parts[0]), str(output_path))
+            else:
+                self._concat_wav(audio_parts, output_path)
 
             logger.info(f"Voicebox TTS synthesized: {output_filename} ({len(sentences)} parts)")
             visemes = self._generate_visemes_from_audio(str(output_path), ja_text)
