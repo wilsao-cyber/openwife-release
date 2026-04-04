@@ -588,6 +588,37 @@
         <div id="voice-test-status" style="color:var(--text-muted);font-size:11px;margin:4px 0;"></div>
       </div>
       <div style="margin:12px 0;border-top:1px solid var(--glass-border);padding-top:12px;">
+        <label style="color:var(--accent);font-size:13px;font-weight:bold;">🎓 語音訓練</label>
+        <div style="margin:8px 0;">
+          <label style="color:var(--text-secondary);font-size:11px;">建立新角色</label>
+          <div style="display:flex;gap:6px;margin:4px 0;">
+            <input id="train-name" type="text" placeholder="角色名稱" style="flex:1;padding:6px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;box-sizing:border-box;">
+            <select id="train-lang" style="padding:6px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;">
+              <option value="ja">日本語</option>
+              <option value="zh">中文</option>
+              <option value="en">English</option>
+            </select>
+            <button id="train-create-btn" style="padding:6px 10px;background:var(--accent);color:var(--bg-primary);border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;">建立</button>
+          </div>
+          <div id="train-create-status" style="color:var(--text-muted);font-size:10px;margin:2px 0;"></div>
+        </div>
+        <div style="margin:8px 0;">
+          <label style="color:var(--text-secondary);font-size:11px;">上傳語音樣本（10-15 秒，WAV/MP3）</label>
+          <select id="train-profile-select" style="width:100%;padding:6px;margin:4px 0;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;"></select>
+          <input id="train-file" type="file" accept=".wav,.mp3,.m4a,.flac,.ogg" style="width:100%;margin:4px 0;font-size:10px;color:var(--text-primary);">
+          <textarea id="train-ref-text" placeholder="語音的文字稿（越準確越好）" rows="2" style="width:100%;padding:6px;margin:4px 0;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;box-sizing:border-box;resize:none;"></textarea>
+          <button id="train-upload-btn" style="width:100%;padding:8px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:11px;">上傳樣本</button>
+          <div id="train-upload-status" style="color:var(--text-muted);font-size:10px;margin:4px 0;"></div>
+        </div>
+        <div style="margin:8px 0;">
+          <label style="color:var(--text-secondary);font-size:11px;">已上傳樣本</label>
+          <div id="train-samples-list" style="font-size:10px;color:var(--text-muted);max-height:80px;overflow-y:auto;"></div>
+        </div>
+        <div style="margin:4px 0;padding:6px;background:rgba(212,165,165,0.1);border-radius:6px;font-size:10px;color:var(--text-muted);">
+          ⚠️ 單個樣本建議 10-15 秒。超過可能導致 GPU 記憶體不足。
+        </div>
+      </div>
+      <div style="margin:12px 0;border-top:1px solid var(--glass-border);padding-top:12px;">
         <label style="color:var(--accent);font-size:13px;font-weight:bold;">⚙️ TTS 服務管理</label>
         <div id="tts-service-status" style="color:var(--text-muted);font-size:11px;margin:6px 0;">狀態: 檢查中...</div>
         <div style="display:flex;gap:8px;margin:8px 0;">
@@ -1932,8 +1963,9 @@ async function loadSettingsData() {
       const normalSel = document.getElementById('voice-normal-select');
       const hornySel = document.getElementById('voice-horny-select');
       const testSel = document.getElementById('voice-test-profile');
+      const trainSel = document.getElementById('train-profile-select');
 
-      [normalSel, hornySel, testSel].forEach(sel => { sel.innerHTML = ''; });
+      [normalSel, hornySel, testSel, trainSel].forEach(sel => { sel.innerHTML = ''; });
 
       profiles.forEach(p => {
         const opt = (sel, selected) => {
@@ -1946,6 +1978,7 @@ async function loadSettingsData() {
         opt(normalSel, p.id === activeNormal);
         opt(hornySel, p.id === activeHorny);
         opt(testSel, false);
+        opt(trainSel, false);
       });
     }
   } catch (e) { console.error('Load voice profiles failed', e); }
@@ -1964,6 +1997,72 @@ document.getElementById('voice-save-btn').onclick = async () => {
     setTimeout(() => { btn.textContent = '套用語音設定'; }, 2000);
   } catch (e) { btn.textContent = '失敗'; }
 };
+
+// Voice training handlers
+document.getElementById('train-create-btn').onclick = async () => {
+  const name = document.getElementById('train-name').value.trim();
+  const lang = document.getElementById('train-lang').value;
+  const status = document.getElementById('train-create-status');
+  if (!name) { status.textContent = '請輸入角色名稱'; return; }
+  status.textContent = '建立中...';
+  try {
+    const resp = await fetch('/api/voice/create', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, language: lang, description: `${name} voice profile` }),
+    });
+    const data = await resp.json();
+    if (data.error) { status.textContent = '❌ ' + data.error; return; }
+    status.textContent = `✓ 已建立: ${data.name} (${data.id.substring(0, 8)}...)`;
+    document.getElementById('train-name').value = '';
+    // Reload all profile dropdowns
+    loadSettingsData();
+  } catch (e) { status.textContent = '❌ ' + e.message; }
+};
+
+document.getElementById('train-upload-btn').onclick = async () => {
+  const profileId = document.getElementById('train-profile-select').value;
+  const file = document.getElementById('train-file').files[0];
+  const refText = document.getElementById('train-ref-text').value.trim();
+  const status = document.getElementById('train-upload-status');
+  if (!profileId) { status.textContent = '請選擇角色'; return; }
+  if (!file) { status.textContent = '請選擇音頻檔案'; return; }
+  if (!refText) { status.textContent = '請輸入文字稿'; return; }
+  status.textContent = '上傳中...（首次可能需要 30-60 秒建立 voice prompt）';
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('profile_id', profileId);
+  formData.append('reference_text', refText);
+  try {
+    const resp = await fetch('/api/voice/upload-sample', { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (data.error) { status.textContent = '❌ ' + data.error; return; }
+    status.textContent = `✓ 樣本已上傳 (${data.id?.substring(0, 8)}...)`;
+    document.getElementById('train-file').value = '';
+    document.getElementById('train-ref-text').value = '';
+    loadTrainSamples(profileId);
+  } catch (e) { status.textContent = '❌ ' + e.message; }
+};
+
+document.getElementById('train-profile-select').onchange = () => {
+  const pid = document.getElementById('train-profile-select').value;
+  if (pid) loadTrainSamples(pid);
+};
+
+async function loadTrainSamples(profileId) {
+  const el = document.getElementById('train-samples-list');
+  try {
+    const resp = await fetch(`/api/voice/samples/${profileId}`);
+    const data = await resp.json();
+    const samples = data.samples || [];
+    if (!samples.length) { el.innerHTML = '<div style="padding:4px;">尚無樣本</div>'; return; }
+    el.innerHTML = samples.map(s =>
+      `<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid var(--glass-border);">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.reference_text?.substring(0, 30) || 'sample'}...</span>
+        <span style="color:var(--text-muted);font-size:9px;">${s.id?.substring(0, 6)}</span>
+      </div>`
+    ).join('');
+  } catch { el.innerHTML = '載入失敗'; }
+}
 
 document.getElementById('voice-test-btn').onclick = async () => {
   const profileId = document.getElementById('voice-test-profile').value;

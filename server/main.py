@@ -548,6 +548,90 @@ async def voice_switch(data: dict):
     return {"ok": True, "mode": mode, "profile_id": profile_id}
 
 
+@app.post("/api/voice/create")
+async def voice_create(data: dict):
+    """Create a new voice profile on Voicebox."""
+    import httpx
+    name = data.get("name", "").strip()
+    description = data.get("description", "").strip()
+    language = data.get("language", "ja")
+    if not name:
+        return {"error": "Name is required"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{config.tts.voicebox_api_url}/profiles",
+                json={"name": name, "description": description, "language": language},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/voice/upload-sample")
+async def voice_upload_sample(
+    profile_id: str = "",
+    reference_text: str = "",
+    file: UploadFile = File(...),
+):
+    """Upload audio sample to a Voicebox profile."""
+    import httpx
+    import tempfile
+    from pathlib import Path
+
+    if not profile_id or not reference_text:
+        return {"error": "profile_id and reference_text required"}
+
+    content = await file.read()
+    ext = Path(file.filename or "audio.wav").suffix or ".wav"
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        async with httpx.AsyncClient(timeout=120) as client:
+            with open(tmp_path, "rb") as f:
+                resp = await client.post(
+                    f"{config.tts.voicebox_api_url}/profiles/{profile_id}/samples",
+                    files={"file": (file.filename, f, "audio/wav")},
+                    data={"reference_text": reference_text},
+                )
+                resp.raise_for_status()
+                return resp.json()
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+@app.delete("/api/voice/profile/{profile_id}")
+async def voice_delete_profile(profile_id: str):
+    """Delete a voice profile from Voicebox."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.delete(f"{config.tts.voicebox_api_url}/profiles/{profile_id}")
+            resp.raise_for_status()
+            return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/voice/samples/{profile_id}")
+async def voice_samples(profile_id: str):
+    """List samples for a voice profile."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{config.tts.voicebox_api_url}/profiles/{profile_id}/samples")
+            resp.raise_for_status()
+            return {"samples": resp.json()}
+    except Exception as e:
+        return {"samples": [], "error": str(e)}
+
+
 @app.post("/api/voice/test")
 async def voice_test(data: dict):
     """Test generate with a profile."""
