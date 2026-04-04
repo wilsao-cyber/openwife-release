@@ -174,8 +174,9 @@ class TTSEngine:
 
             prompt = self._TRANSLATE_HORNY if emotion == "horny" else self._TRANSLATE_BASE
 
-            # Force use_fallback=False — translation is safe content,
-            # and primary provider (DashScope) follows instructions better
+            # If primary is Ollama (local), prefer fallback (cloud) for better translation
+            # If primary is cloud, use primary directly
+            use_fb = self._llm_client._is_ollama and self._llm_client.has_fallback
             result = await self._llm_client.chat(
                 messages=[
                     {"role": "system", "content": prompt},
@@ -184,7 +185,7 @@ class TTSEngine:
                 max_tokens=500,
                 temperature=0.3,
                 think=False,
-                use_fallback=False,
+                use_fallback=use_fb,
             )
             ja_text = result.strip() if isinstance(result, str) else str(result).strip()
             return ja_text
