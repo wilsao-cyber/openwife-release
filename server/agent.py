@@ -620,13 +620,16 @@ class AgentOrchestrator:
         for tc in tool_calls:
             func = tc["function"]
             name = func["name"]
-            args = json.loads(func["arguments"])
-            lines.append(f"- {name}: {json.dumps(args, ensure_ascii=False)}")
+            try:
+                args = json.loads(func["arguments"])
+                lines.append(f"- {name}: {json.dumps(args, ensure_ascii=False)}")
+            except (json.JSONDecodeError, TypeError):
+                lines.append(f"- {name}: {func.get('arguments', '')[:200]}...")
         return "\n".join(lines)
 
     def _extract_emotion(self, text: str) -> tuple[str, str]:
         match = re.search(
-            r"\[emotion:(happy|sad|angry|surprised|relaxed|neutral)\]\s*$", text
+            r"\[emotion:(happy|sad|angry|surprised|relaxed|neutral|horny)\]\s*$", text
         )
         if match:
             return text[: match.start()].rstrip(), match.group(1)
