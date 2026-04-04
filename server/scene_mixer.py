@@ -101,20 +101,25 @@ async def mix_scene(
 
     timeline = np.zeros(SAMPLE_RATE * 5, dtype=np.float32)  # start with 5s, will grow
     cursor = 0  # current position in samples
-    active_sfx = None  # currently looping SFX audio
-    active_sfx_volume = 0.5
 
-    def _layer_active_sfx(from_pos: int, to_pos: int):
-        """Loop active SFX between two positions on the timeline."""
+    # Multiple SFX layers can play simultaneously (e.g., rain + bedsheet)
+    # Each layer: {"audio": np.ndarray, "volume": float, "tag": str}
+    active_layers: list[dict] = []
+
+    def _layer_all_sfx(from_pos: int, to_pos: int):
+        """Loop ALL active SFX layers between two positions."""
         nonlocal timeline
-        if active_sfx is None or len(active_sfx) == 0:
-            return
         length = to_pos - from_pos
         if length <= 0:
             return
-        repeats = (length // len(active_sfx)) + 1
-        looped = np.tile(active_sfx, repeats)[:length]
-        timeline = _mix_into(timeline, looped, from_pos, active_sfx_volume)
+        for layer in active_layers:
+            sfx = layer["audio"]
+            vol = layer["volume"]
+            if len(sfx) == 0:
+                continue
+            repeats = (length // len(sfx)) + 1
+            looped = np.tile(sfx, repeats)[:length]
+            timeline = _mix_into(timeline, looped, from_pos, vol)
 
     for step in script:
         step_type = step.get("type", "")
@@ -146,8 +151,8 @@ async def mix_scene(
                     cursor += len(speech_audio)
                     cursor += int(0.15 * SAMPLE_RATE)
 
-            # Layer active SFX under this speech segment
-            _layer_active_sfx(speech_start, cursor)
+            # Layer ALL active SFX under this speech segment
+            _layer_all_sfx(speech_start, cursor)
 
         elif step_type == "sfx":
             tag = step.get("tag", "")
@@ -169,26 +174,25 @@ async def mix_scene(
             if fade_in_s > 0:
                 sfx_audio = _fade_in(sfx_audio, fade_in_s)
 
-            active_sfx = sfx_audio
-            active_sfx_volume = volume
+            # Add as new layer (stacks with existing layers)
+            active_layers.append({"audio": sfx_audio, "volume": volume, "tag": tag})
 
         elif step_type == "pause":
             duration = step.get("duration", 5)
             pause_samples = int(duration * SAMPLE_RATE)
 
-            # Layer active SFX during pause
-            _layer_active_sfx(cursor, cursor + pause_samples)
+            # Layer ALL active SFX during pause
+            _layer_all_sfx(cursor, cursor + pause_samples)
             cursor += pause_samples
 
         elif step_type == "sfx_stop":
-            if active_sfx is not None:
+            if active_layers:
                 # Fade out at current position
                 fade_len = min(int(0.5 * SAMPLE_RATE), cursor)
                 if cursor >= fade_len:
                     fade = np.linspace(1, 0, fade_len, dtype=np.float32)
                     timeline[cursor - fade_len:cursor] *= fade
-                active_sfx = None
-                active_sfx_volume = 0.5
+                active_layers.clear()
 
     # Trim trailing silence
     end = len(timeline)
