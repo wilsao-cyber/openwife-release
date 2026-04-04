@@ -348,11 +348,12 @@ class LLMClient:
                 raise
 
     def update_provider(self, provider: str, base_url: str, api_key: str, model: str):
+        from config import resolve_model
         self.provider = provider
         self.base_url = base_url
         self.api_key = api_key
-        self.model = model
-        logger.info(f"Provider switched: {provider} @ {base_url}, model={model}")
+        self.model = resolve_model(model) if provider == "ollama" else model
+        logger.info(f"Provider switched: {provider} @ {base_url}, model={self.model}")
 
     def update_fallback(self, provider: str, base_url: str, api_key: str, model: str):
         self.fallback_provider = provider
