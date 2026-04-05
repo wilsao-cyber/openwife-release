@@ -383,7 +383,13 @@ class AgentOrchestrator:
         self, message: str, language: str, client_id: str
     ) -> list[dict]:
         memories = await self.memory.search(message, limit=3)
-        system_prompt = self.soul.get_chat_prompt(language)
+
+        # Use Koikatsu ActionScript prompt for game plugin client
+        if client_id == "koikatsu":
+            system_prompt = self.soul.get_koikatsu_prompt(language)
+        else:
+            system_prompt = self.soul.get_chat_prompt(language)
+
         if memories:
             memory_text = "\n".join([f"- {m['content']}" for m in memories])
             system_prompt += f"\n\n## Relevant Memories\n{memory_text}"

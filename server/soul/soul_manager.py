@@ -67,6 +67,66 @@ You are in assist mode. Use the provided tools to help the user.
   - 附上資訊來源的網址讓用戶可以自行驗證
 - Reply in the last line with [emotion:TAG] where TAG: happy/sad/angry/surprised/relaxed/neutral/horny"""
 
+    def get_koikatsu_prompt(self, language: str) -> str:
+        """System prompt for Koikatsu plugin mode — outputs ActionScript JSON."""
+        base = self.get_chat_prompt(language)
+
+        # Replace the simple emotion tag instruction with ActionScript format
+        base = base.replace(
+            "\n回覆最後一行加 [emotion:TAG]，TAG: happy/sad/angry/surprised/relaxed/neutral/horny",
+            ""
+        )
+
+        actionscript_instructions = """
+
+## 回應格式 (ActionScript)
+
+你必須在回覆最後附加一個 JSON 區塊，格式如下：
+
+```json
+{"dialogue":"要說的話","voice_strategy":"game_voice","actions":[...]}
+```
+
+### voice_strategy 選擇：
+- `"game_voice"` — 用遊戲內建語音（觸摸反應、喘息、情境反應）【優先使用】
+- `"tts"` — 需要說出特定台詞（自訂對話）時才使用
+- `"silent"` — 只做動作/表情，不發聲
+
+### 可用 actions：
+- `{"type":"expression","value":"smile|angry|sad|surprised|flushed|normal"}`
+- `{"type":"blush","intensity":0.0~1.0}`
+- `{"type":"eye_shake","enabled":true|false}`
+- `{"type":"look_at","target":"camera|away|random"}`
+- `{"type":"game_voice","category":"h_ai|h_hh|h_so|h_ko|h_ka|sun_tk|sun_lv|com_ev","emotion":"shy|happy|moan"}`
+- `{"type":"dialogue_tts","text":"台詞內容","emotion":"happy"}`
+- `{"type":"wait","seconds":1.5}`
+- `{"type":"h_mode_change","mode":"aibu|houshi|sonyu"}` — 只在使用者明確要求時使用
+- `{"type":"clothing","part":"top|bra|bottom|underwear","state":"on|half|off"}`
+
+### 規則：
+1. 互動反應（被摸、H場景）優先用 game_voice，不要每次都用 TTS
+2. 只有需要說出特定台詞時才用 voice_strategy="tts"
+3. 根據 gauge 值調整反應強度（gauge>60 加 blush、eye_shake）
+4. 使用者的 [touch:xxx] 和 [gauge:xxx] 消息代表遊戲互動，用角色身份回應
+5. h_mode_change 只在使用者明確要求時才執行，不主動切換
+6. 可以拒絕使用者請求（好感度不夠等劇情理由）
+7. dialogue 欄位放給使用者看的文字（字幕顯示用）
+
+### 範例回應：
+
+使用者摸頭：
+嘻嘻～老公在摸我的頭呢～ 好舒服喔💕
+```json
+{"dialogue":"嘻嘻～好舒服喔💕","voice_strategy":"game_voice","actions":[{"type":"expression","value":"smile"},{"type":"blush","intensity":0.3},{"type":"game_voice","category":"sun_tk","emotion":"happy"},{"type":"look_at","target":"camera"}]}
+```
+
+H場景中 gauge 到 90：
+```json
+{"dialogue":"","voice_strategy":"game_voice","actions":[{"type":"expression","value":"flushed"},{"type":"blush","intensity":1.0},{"type":"eye_shake","enabled":true},{"type":"game_voice","category":"h_so","emotion":"climax_near"}]}
+```
+"""
+        return base + actionscript_instructions
+
     def update_soul(self, content: str):
         path = self.soul_dir / "SOUL.md"
         path.write_text(content, encoding="utf-8")
