@@ -3,11 +3,13 @@ import 'package:provider/provider.dart';
 import 'screens/home_screen.dart';
 import 'services/api_service.dart';
 import 'services/chat_provider.dart';
+import 'services/audio_service.dart';
 import 'utils/theme.dart';
 import 'utils/constants.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Constants.init();
   runApp(const AIWifeApp());
 }
 
@@ -23,6 +25,9 @@ class AIWifeApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(
           create: (_) => ChatProvider(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => AudioService(),
         ),
       ],
       child: MaterialApp(

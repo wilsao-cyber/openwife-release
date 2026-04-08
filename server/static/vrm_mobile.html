@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<style>
+  *{margin:0;padding:0;}
+  body{overflow:hidden;touch-action:none;}
+  canvas{display:block;width:100%;height:100%;}
+</style>
+</head><body>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./js/three.module.min.js",
+    "three/addons/": "./js/",
+    "@pixiv/three-vrm": "./js/three-vrm.module.min.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/GLTFLoader.js';
+import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+
+// Parse bg color from URL params
+const params = new URLSearchParams(location.search);
+const bgColor = params.get('bg') || '#2a1f18';
+document.body.style.background = bgColor;
+
+// Scene
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 1.3, 2.5);
+
+// Renderer — optimized for mobile
+const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+// Lighting
+scene.add(new THREE.AmbientLight(0xffe8d0, 0.9));
+const dir = new THREE.DirectionalLight(0xffd4a0, 0.9);
+dir.position.set(1, 2, 1);
+scene.add(dir);
+
+// Controls
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.0, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.1;
+controls.minDistance = 0.5;
+controls.maxDistance = 5;
+controls.update();
+
+// Load VRM
+let vrm = null;
+const clock = new THREE.Clock();
+let nextBlink = 0, blinkEnd = 0;
+
+const loader = new GLTFLoader();
+loader.register(p => new VRMLoaderPlugin(p));
+loader.load('./models/character.vrm', gltf => {
+  vrm = gltf.userData.vrm;
+  if (!vrm) return;
+  VRMUtils.rotateVRM0(vrm);
+
+  // Fix double-sided for opaque materials
+  vrm.scene.traverse(o => {
+    if (o.isMesh && o.material) {
+      if (!o.material.transparent && o.material.opacity >= 1.0) {
+        o.material.side = THREE.DoubleSide;
+      }
+    }
+  });
+
+  scene.add(vrm.scene);
+
+  // Auto-center camera (adapt to portrait/landscape)
+  const box = new THREE.Box3().setFromObject(vrm.scene);
+  const c = box.getCenter(new THREE.Vector3());
+  const s = box.getSize(new THREE.Vector3());
+  const aspect = innerWidth / innerHeight;
+  const distFactor = aspect < 0.8 ? 1.6 : aspect < 1.0 ? 1.4 : 1.2;
+  controls.target.set(c.x, c.y, c.z);
+  camera.position.set(c.x, c.y + 0.1, c.z + s.y * distFactor);
+  controls.update();
+}, undefined, err => {
+  console.error('VRM load failed:', err);
+});
+
+// Animate
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+
+  if (vrm) {
+    // Breathing
+    if (vrm.humanoid) {
+      const t = clock.getElapsedTime();
+      const chest = vrm.humanoid.getNormalizedBoneNode('chest');
+      const spine = vrm.humanoid.getNormalizedBoneNode('spine');
+      if (chest) { chest.rotation.x = Math.sin(t * 0.8) * 0.04; }
+      if (spine) { spine.rotation.x = Math.sin(t * 0.8) * 0.024; spine.rotation.z = Math.sin(t * 0.3) * 0.015; }
+    }
+    // Blink
+    if (vrm.expressionManager) {
+      const t = clock.getElapsedTime();
+      if (t >= blinkEnd && t >= nextBlink) {
+        vrm.expressionManager.setValue('blink', 1.0);
+        blinkEnd = t + 0.15;
+        nextBlink = t + 2 + Math.random() * 4;
+      } else if (t >= blinkEnd) {
+        vrm.expressionManager.setValue('blink', 0);
+      }
+      vrm.expressionManager.update();
+    }
+    if (vrm.lookAt) vrm.lookAt.lookAt(new THREE.Vector3(0, 1.3, 10));
+    vrm.update(delta);
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+// Resize
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// Listen for expression changes from React Native
+window.addEventListener('message', (e) => {
+  try {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'expression' && vrm && vrm.expressionManager) {
+      for (const expr of vrm.expressionManager.expressions) {
+        vrm.expressionManager.setValue(expr.expressionName, 0);
+      }
+      if (msg.name && msg.name !== 'neutral') {
+        vrm.expressionManager.setValue(msg.name, msg.value || 1.0);
+      }
+    }
+  } catch {}
+});
+</script>
+</body></html>

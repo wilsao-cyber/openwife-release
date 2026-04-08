@@ -241,12 +241,7 @@ app = FastAPI(title="AI Wife Server", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8000",
-        "http://localhost:3000",
-        "http://127.0.0.1:8000",
-        "http://10.0.2.2:8000",
-    ],
+    allow_origins=["*"],  # Allow Tailscale IPs + any client
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -862,6 +857,40 @@ async def delete_bgm(filename: str):
 
 
 # --- Health ---
+
+
+@app.get("/api/assets/sync")
+async def assets_sync():
+    """Return all available assets for mobile sync."""
+    from sfx_catalog import sfx_catalog
+
+    # VRM models
+    vrm_models = [{"filename": "character.vrm", "url": "/static/models/character.vrm"}]
+    for m in vrm_manager.list_models():
+        vrm_models.append({"filename": m["filename"], "url": f"/vrm/{m['filename']}", "size": m["size"]})
+
+    # Animations
+    animations = _read_anim_registry()
+
+    # BGM
+    bgm = []
+    bgm_dir = Path("../assets/audio_extracted/bgm")
+    if bgm_dir.exists():
+        for f in sorted(bgm_dir.glob("*")):
+            if f.is_file() and f.suffix.lower() in {".wav", ".mp3", ".ogg"}:
+                bgm.append({"filename": f.name, "url": f"/audio-assets/bgm/{f.name}"})
+        custom_dir = bgm_dir / "custom"
+        if custom_dir.exists():
+            for f in sorted(custom_dir.glob("*")):
+                if f.is_file():
+                    bgm.append({"filename": f.name, "url": f"/audio-assets/bgm/custom/{f.name}", "custom": True})
+
+    return {
+        "vrm_models": vrm_models,
+        "animations": animations,
+        "bgm": bgm,
+        "sfx_categories": sfx_catalog.get_categories(),
+    }
 
 
 @app.get("/health")

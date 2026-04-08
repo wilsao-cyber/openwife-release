@@ -5,7 +5,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter/foundation.dart';
 
 class ApiService extends ChangeNotifier {
-  final String baseUrl;
+  String baseUrl;
   WebSocketChannel? _wsChannel;
   bool _isConnected = false;
   String _currentClientId = '';
@@ -18,6 +18,35 @@ class ApiService extends ChangeNotifier {
   String get currentClientId => _currentClientId;
 
   ApiService({required this.baseUrl});
+
+  /// Update server URL at runtime and reconnect
+  Future<void> updateBaseUrl(String newUrl) async {
+    newUrl = newUrl.trim();
+    if (newUrl.endsWith('/')) newUrl = newUrl.substring(0, newUrl.length - 1);
+    if (newUrl == baseUrl) return;
+    disconnect();
+    baseUrl = newUrl;
+    if (_currentClientId.isNotEmpty) {
+      await connectWebSocket(_currentClientId);
+    }
+  }
+
+  /// Check if server is reachable
+  Future<bool> checkConnection() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/health'))
+          .timeout(const Duration(seconds: 5));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Fetch all available assets from server
+  Future<Map<String, dynamic>> fetchAssets() async {
+    final response = await http.get(Uri.parse('$baseUrl/api/assets/sync'));
+    return jsonDecode(response.body);
+  }
 
   Future<void> init(String clientId) async {
     _currentClientId = clientId;

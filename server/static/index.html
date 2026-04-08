@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>AI Wife</title>
 <style>
   /* ── Rose Dusk Theme ─────────────────────────────────────────────── */
@@ -115,11 +115,16 @@
     position: absolute; top: 50px; bottom: 68px; right: 0;
     width: 55%; max-width: 450px; min-width: 280px;
     display: flex; flex-direction: column; z-index: 10;
+    pointer-events: none; /* Let touches pass through to 3D canvas */
   }
   #messages {
     flex: 1; overflow-y: auto; padding: 12px 16px 72px 16px; min-height: 0;
     display: flex; flex-direction: column; gap: 10px;
     scroll-behavior: smooth;
+    pointer-events: none; /* Let touches pass through empty space */
+  }
+  #messages .msg {
+    pointer-events: auto; /* Only message bubbles receive touches */
   }
   #messages::-webkit-scrollbar { width: 4px; }
   #messages::-webkit-scrollbar-track { background: transparent; }
@@ -1354,9 +1359,17 @@ function initScene() {
   controls.target.set(0, 1.0, 0);
   controls.enableDamping = true;
   controls.dampingFactor = 0.1;
-  controls.minDistance = 1;
+  controls.minDistance = 0.5;
   controls.maxDistance = 5;
+  controls.enablePan = true;
+  controls.enableZoom = true;
+  controls.enableRotate = true;
+  // Touch: one finger rotate, two finger zoom+pan
+  controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
   controls.update();
+
+  // Prevent default touch gestures on canvas (avoid browser zoom/scroll)
+  renderer.domElement.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
 
   window.addEventListener('resize', () => {
     const w = container.clientWidth, h = container.clientHeight;
@@ -1439,12 +1452,15 @@ async function loadModel(url) {
 
     scene.add(vrm.scene);
 
-    // Auto-center camera
+    // Auto-center camera (adapt to screen aspect ratio)
     const box = new THREE.Box3().setFromObject(vrm.scene);
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
+    const aspect = window.innerWidth / window.innerHeight;
+    // Portrait screens need more distance to fit the full character
+    const distFactor = aspect < 0.8 ? 1.6 : aspect < 1.0 ? 1.4 : 1.2;
     controls.target.set(center.x, center.y, center.z);
-    camera.position.set(center.x, center.y + 0.1, center.z + size.y * 1.2);
+    camera.position.set(center.x, center.y + 0.1, center.z + size.y * distFactor);
     controls.update();
 
     loadingEl.querySelector('span').textContent = 'Loading animations...';

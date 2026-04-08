@@ -192,8 +192,56 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         _buildSection('伺服器設定', [
           _buildTextField('伺服器 URL', _serverUrlController, (v) {
             setState(() => _serverUrl = v);
-            _saveSetting('server_url', v);
           }),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Row(
+              children: [
+                Consumer<ApiService>(
+                  builder: (_, api, __) => Row(
+                    children: [
+                      Icon(
+                        api.isConnected ? Icons.circle : Icons.circle_outlined,
+                        color: api.isConnected ? Colors.green : Colors.red,
+                        size: 12,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        api.isConnected ? '已連線' : '未連線',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: api.isConnected ? Colors.green : Colors.red,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    final url = _serverUrlController.text.trim();
+                    if (url.isEmpty) return;
+                    await Constants.setServerUrl(url);
+                    if (!mounted) return;
+                    final api = context.read<ApiService>();
+                    await api.updateBaseUrl(url);
+                    final ok = await api.checkConnection();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(ok ? '連線成功' : '連線失敗')),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.sync, size: 16),
+                  label: const Text('連線'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
           SwitchListTile(
             title: const Text('自動連線'),
             subtitle: const Text('啟動時自動連線到伺服器'),

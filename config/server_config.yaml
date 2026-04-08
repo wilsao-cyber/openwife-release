@@ -30,8 +30,8 @@ tts:
   sample_rate: 22050
 
 stt:
-  provider: "whisper"
-  model: "medium"
+  provider: "sensevoice"
+  model: "iic/SenseVoiceSmall"
   language: "auto"
 
 email:

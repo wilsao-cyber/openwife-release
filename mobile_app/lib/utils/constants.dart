@@ -1,21 +1,49 @@
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class Constants {
-  /// Server base URL, auto-detected per platform:
-  /// - Web: localhost (same machine)
-  /// - Android emulator: 10.0.2.2 (host loopback alias)
-  /// - Real device: LAN IP (change this to your server's IP)
-  static String get serverUrl {
+  static const String _defaultTailscaleUrl = 'http://100.92.220.125:8000';
+
+  /// Default server URL per platform
+  static String get _platformDefault {
     if (kIsWeb) return 'http://localhost:8000';
-    if (Platform.isAndroid) return 'http://10.0.2.2:8000';
+    if (Platform.isAndroid) return _defaultTailscaleUrl;
     return 'http://localhost:8000';
   }
 
-  static String get wsUrl {
-    if (kIsWeb) return 'ws://localhost:8000';
-    if (Platform.isAndroid) return 'ws://10.0.2.2:8000';
-    return 'ws://localhost:8000';
+  // Cached runtime URL (set by init or settings)
+  static String _serverUrl = '';
+  static String _wsUrl = '';
+
+  static String get serverUrl => _serverUrl.isNotEmpty ? _serverUrl : _platformDefault;
+  static String get wsUrl => _wsUrl.isNotEmpty ? _wsUrl : _deriveWsUrl(_platformDefault);
+
+  /// Call once at app startup to load saved URL
+  static Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('server_url');
+    if (saved != null && saved.isNotEmpty) {
+      _serverUrl = saved;
+      _wsUrl = _deriveWsUrl(saved);
+    } else {
+      _serverUrl = _platformDefault;
+      _wsUrl = _deriveWsUrl(_platformDefault);
+    }
+  }
+
+  /// Update server URL at runtime (from settings)
+  static Future<void> setServerUrl(String url) async {
+    url = url.trim();
+    if (url.endsWith('/')) url = url.substring(0, url.length - 1);
+    _serverUrl = url;
+    _wsUrl = _deriveWsUrl(url);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('server_url', url);
+  }
+
+  static String _deriveWsUrl(String httpUrl) {
+    return httpUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
   }
 
   static const String defaultLanguage = 'zh-TW';
