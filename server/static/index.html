@@ -74,12 +74,7 @@
   }
 
   #greeting {
-    position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
-    background: var(--glass); border: 1px solid var(--glass-border);
-    border-radius: var(--radius-lg); padding: 10px 18px; color: var(--text-primary);
-    font-size: 14px; max-width: 80%; text-align: center;
-    backdrop-filter: var(--blur); display: none; z-index: 15;
-    animation: fadeIn 0.3s ease;
+    display: none !important; /* Disabled — messages show in chat panel instead */
   }
   @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
 
@@ -276,7 +271,7 @@
     border-left: 1px solid var(--glass-border);
   }
   #settings-modal.visible { transform: translateX(0); }
-  #settings-modal.hidden { transform: translateX(100%); }
+  #settings-modal.hidden { transform: translateX(100%); pointer-events: none; }
   .modal-content {
     background: transparent; width: 100%; height: 100%;
     border-radius: 0; border: none;
@@ -299,7 +294,7 @@
     z-index: 1000; display: flex; align-items: center; justify-content: center;
     transition: opacity 0.5s ease, transform 0.5s ease;
   }
-  #setup-screen.hidden { opacity: 0; pointer-events: none; transform: scale(1.03); }
+  #setup-screen.hidden { opacity: 0; pointer-events: none; transform: scale(1.03); visibility: hidden; }
 
   .setup-card {
     background: rgba(42, 45, 62, 0.8); backdrop-filter: var(--blur);
@@ -364,7 +359,7 @@
     font-size: 13px; z-index: 2000; opacity: 0; pointer-events: none;
     transition: opacity 0.3s;
   }
-  #toast.show { opacity: 1; }
+  #toast.show { opacity: 1; pointer-events: none; }
 
   /* Model switch overlay */
   #model-switch-overlay {
@@ -421,7 +416,6 @@
   </div>
   <div id="loading"><div class="spinner"></div><span>Loading model...</span></div>
   <div id="error"></div>
-  <div id="greeting"></div>
 </div>
 
 <div id="chat-panel">
@@ -1151,8 +1145,8 @@ function applySceneTheme(themeName) {
     renderer.toneMappingExposure = theme.toneMappingExposure;
   }
   localStorage.setItem('ai-wife-scene', themeName);
-  // Update audio when scene changes
-  if (typeof switchSceneAudio === 'function') switchSceneAudio(themeName);
+  // Update audio when scene changes (only after user has interacted)
+  if (typeof switchSceneAudio === 'function' && audioCtx) switchSceneAudio(themeName);
 }
 
 // ── Audio Systems: BGM + Ambient + UI SFX ──────────────────────────
@@ -1968,9 +1962,7 @@ function addMessageObj(type, content, className = '') {
 }
 
 function showGreeting(text) {
-  greetingEl.textContent = text;
-  greetingEl.style.display = 'block';
-  setTimeout(() => { greetingEl.style.display = 'none'; }, 5000);
+  // Greeting element removed — no-op
 }
 
 // ── SSE Consumption ──────────────────────────────────────────────────
@@ -3223,7 +3215,6 @@ enterBtn.addEventListener('click', async () => {
   setupScreen.classList.add('hidden');
   enterBtn.textContent = '進入 💕';
   enterBtn.disabled = false;
-  showToast('歡迎回來 💕');
   updateModelDisplay();
 
   // Start BGM + ambient (user just clicked, so autoplay is allowed)
@@ -3959,7 +3950,6 @@ observer.observe(setupScreen, { attributes: true });
 // Saved values are pre-filled but user must click through setup every time
 
 setTimeout(() => {
-  showGreeting('老公～歡迎回來！今天想跟小愛聊什麼呢？');
   if (animController && animController.actions.has('wave')) {
     animController.play('wave');
     setTimeout(() => { if (animController) animController.play('idle'); }, 3000);
