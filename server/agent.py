@@ -100,6 +100,12 @@ class AgentOrchestrator:
         else:
             return await self._assist_mode_nonstream(message, language, client_id)
 
+    def _get_max_tokens(self, deep_thinking: bool = False) -> int:
+        """Return token limit — unlocked when deep_thinking is enabled."""
+        if deep_thinking:
+            return getattr(self.config.llm, 'deep_thinking_tokens', 8192)
+        return self.config.llm.max_tokens
+
     async def chat_stream(
         self,
         message: str,
@@ -107,10 +113,15 @@ class AgentOrchestrator:
         client_id: str = "default",
         mode_override: Optional[str] = None,
         use_fallback: bool = False,
+        deep_thinking: bool = False,
     ):
         """Main entry point — streaming version."""
         mode = mode_override or self._classify_intent_fast(message)
         yield json.dumps({"type": "mode_change", "mode": mode}, ensure_ascii=False)
+
+        # Auto-enable deep thinking for assist mode (multi-step tasks)
+        if mode == "assist" and not deep_thinking:
+            deep_thinking = True
 
         # Debug event for frontend debug panel
         matched = [p for p in self._get_assist_phrases() if p in message.lower()]
@@ -123,16 +134,17 @@ class AgentOrchestrator:
                     "intent_keywords": matched,
                     "timestamp": time.time(),
                     "use_fallback": use_fallback,
+                    "deep_thinking": deep_thinking,
                 },
             },
             ensure_ascii=False,
         )
 
         if mode == "chat":
-            async for chunk in self._chat_mode_stream(message, language, client_id, use_fallback=use_fallback):
+            async for chunk in self._chat_mode_stream(message, language, client_id, use_fallback=use_fallback, deep_thinking=deep_thinking):
                 yield chunk
         else:
-            async for chunk in self._assist_mode_stream(message, language, client_id, use_fallback=use_fallback):
+            async for chunk in self._assist_mode_stream(message, language, client_id, use_fallback=use_fallback, deep_thinking=deep_thinking):
                 yield chunk
 
     def _get_display_hint(self, tool_name: str, result: dict) -> dict | None:
@@ -348,15 +360,16 @@ class AgentOrchestrator:
             "mode": "chat",
         }
 
-    async def _chat_mode_stream(self, message: str, language: str, client_id: str, use_fallback: bool = False):
+    async def _chat_mode_stream(self, message: str, language: str, client_id: str, use_fallback: bool = False, deep_thinking: bool = False):
         """Fast chat — streaming."""
         t0 = time.time()
         messages = await self._build_chat_messages(message, language, client_id)
+        max_tokens = self._get_max_tokens(deep_thinking)
 
         full_response = ""
         think_chars = 0
         stripper = _ThinkStripper()
-        stream_gen = await self.llm.chat(messages, think=False, stream=True, use_fallback=use_fallback)
+        stream_gen = await self.llm.chat(messages, think=False, stream=True, use_fallback=use_fallback, max_tokens=max_tokens)
         async for chunk in stream_gen:
             visible = stripper.feed(chunk)
             think_chars += len(chunk) - len(visible)
@@ -429,7 +442,8 @@ class AgentOrchestrator:
         """Non-streaming assist — single LLM call with tools, think=False."""
         messages = await self._build_assist_messages(message, language, client_id)
         tools = self.skills.get_tool_definitions()
-        result = await self.llm.chat(messages, tools=tools, think=False, max_tokens=2048)
+        max_tokens = self._get_max_tokens(deep_thinking=True)  # assist always unlocked
+        result = await self.llm.chat(messages, tools=tools, think=False, max_tokens=max_tokens)
 
         if isinstance(result, dict) and result.get("tool_calls"):
             self.pending_plans[client_id] = {
@@ -459,15 +473,16 @@ class AgentOrchestrator:
             clean_text, emotion = self._extract_emotion(content)
             return {"text": clean_text, "emotion": emotion, "mode": "assist"}
 
-    async def _assist_mode_stream(self, message: str, language: str, client_id: str, use_fallback: bool = False):
+    async def _assist_mode_stream(self, message: str, language: str, client_id: str, use_fallback: bool = False, deep_thinking: bool = False):
         """Streaming assist — notice + planning with confirmation."""
         notice = self._get_assist_notice(language)
         yield json.dumps({"type": "notice", "text": notice}, ensure_ascii=False)
 
         messages = await self._build_assist_messages(message, language, client_id)
         tools = self.skills.get_tool_definitions()
+        max_tokens = self._get_max_tokens(deep_thinking)
 
-        result = await self.llm.chat(messages, tools=tools, think=False, max_tokens=2048, use_fallback=use_fallback)
+        result = await self.llm.chat(messages, tools=tools, think=False, max_tokens=max_tokens, use_fallback=use_fallback)
 
         if isinstance(result, dict) and result.get("tool_calls"):
             plan_text = result.get("content", "")

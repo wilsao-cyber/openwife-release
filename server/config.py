@@ -22,11 +22,12 @@ def resolve_model(value: str) -> str:
 
 
 class LLMConfig(BaseSettings):
-    provider: str = "ollama"
-    base_url: str = "http://localhost:9090"
-    model: str = "smart7"
+    provider: str = "dashscope"
+    base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode"
+    model: str = "qwen3-235b-a22b"
     temperature: float = 0.7
     max_tokens: int = 2048
+    deep_thinking_tokens: int = 8192  # unlocked limit for complex tasks
     api_key: str = ""
     fallback_provider: str = ""
     fallback_base_url: str = ""
@@ -35,7 +36,8 @@ class LLMConfig(BaseSettings):
 
     def __init__(self, **data):
         super().__init__(**data)
-        self.model = resolve_model(self.model)
+        if self.provider == "ollama":
+            self.model = resolve_model(self.model)
 
 
 class TTSConfig(BaseSettings):
@@ -82,11 +84,11 @@ class OpenCodeConfig(BaseSettings):
     server_url: str = "http://localhost:4096"
     auto_start: bool = True
     timeout: int = 600
-    allowed_paths: List[str] = ["./mobile_app", "./server"]
+    allowed_paths: List[str] = ["./server"]
 
 
 class CharacterConfig(BaseSettings):
-    default_model_path: str = "./mobile_app/assets/models"
+    default_model_path: str = "./server/static/models"
     animation_enabled: bool = True
     vrm_support: bool = True
 

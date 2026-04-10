@@ -10,18 +10,9 @@ venv/
 env/
 .venv/
 
-# Mobile App
-mobile_app/build/
-mobile_app/.dart_tool/
-mobile_app/.packages
-mobile_app/.pub-cache/
-mobile_app/pubspec.lock
-mobile_app/android/
-mobile_app/ios/
-mobile_app/linux/
-mobile_app/macos/
-mobile_app/windows/
-mobile_app/test/
+# Large VRM/3D models
+server/static/models/*.glb
+server/static/models/lipusi.*
 
 # Server
 server/__pycache__/
@@ -63,9 +54,7 @@ Thumbs.db
 
 # Local assets (audio, models, etc.)
 assets/audio_extracted/
-server/static/models/lipusi.*
 server/static/animations/idle_look.fbx
-server/static/models/*.glb
 scripts/ai_generated/
 voicebox_training/
 logs/

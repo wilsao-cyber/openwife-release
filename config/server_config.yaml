@@ -4,12 +4,13 @@ server:
   debug: false
 
 llm:
-  provider: "ollama"
-  base_url: "http://localhost:9090"
-  model: "smart7"
+  provider: "dashscope"
+  base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode"
+  model: "qwen3-235b-a22b"
   temperature: 0.7
   max_tokens: 2048
-  api_key: ""
+  deep_thinking_tokens: 8192
+  api_key: ""                    # Set via setup UI or env DASHSCOPE_API_KEY
   fallback_provider: ""
   fallback_base_url: ""
   fallback_api_key: ""
@@ -57,11 +58,10 @@ opencode:
   auto_start: true
   timeout: 600
   allowed_paths:
-    - "./mobile_app"
     - "./server"
 
 character:
-  default_model_path: "./mobile_app/assets/models"
+  default_model_path: "./server/static/models"
   animation_enabled: true
   vrm_support: true
 

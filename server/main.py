@@ -340,11 +340,12 @@ async def api_chat_stream(data: dict):
     client_id = data.get("client_id", "default")
     mode_override = data.get("mode_override")
     use_fallback = data.get("use_fallback", False)
+    deep_thinking = data.get("deep_thinking", False)
 
     async def event_generator():
         async for chunk_json in agent.chat_stream(
             message, language, client_id, mode_override=mode_override,
-            use_fallback=use_fallback,
+            use_fallback=use_fallback, deep_thinking=deep_thinking,
         ):
             yield f"data: {chunk_json}\n\n"
 
