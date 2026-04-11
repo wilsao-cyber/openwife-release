@@ -1,0 +1,95 @@
+# Flutter
+*.pyc
+__pycache__/
+*.log
+*.pot
+*.pyc
+.pytest_cache/
+.mypy_cache/
+venv/
+env/
+.venv/
+
+# Large VRM/3D models
+server/static/models/*.glb
+server/static/models/lipusi.*
+
+# Server
+server/__pycache__/
+server/.env
+server/venv/
+*.egg-info/
+
+# Secrets & tokens
+config/credentials.json
+config/*_token.json
+
+# Runtime data
+server/memory/memories.db
+output/
+server/output/
+server/models/
+
+# Models (top-level ML models directory only)
+/models/
+!/models/README.md
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large binary files (top-level output only)
+/output/**/*.glb
+/output/**/*.gltf
+/output/**/*.vrm
+/output/**/*.obj
+*.egg-info/.superpowers/
+
+# Local assets (audio, models, etc.)
+assets/audio_extracted/
+server/static/animations/idle_look.fbx
+scripts/ai_generated/
+voicebox_training/
+logs/
+
+# Agent/tool configs
+.agent/
+.opencode/
+.superpowers/
+.mcp.json
+
+# Dev-only / private files
+CLAUDE.md
+config/server_config.yaml
+!config/server_config.example.yaml
+server/Modelfile
+server/bench_*.py
+server/test_calendar.py
+server/test_email.py
+server/skills/builtin/_*.disabled
+docs/superpowers/
+sfx_library
+
+# Temp dev/debug files
+test_run.bat
+debug_launch.bat
+install_deps.bat
+install_python.bat
+fix_symlinks.bat
+diagnose.bat
+setup.bat
+push_release.bat
+RELEASE_NOTES.md
+debug.log
+test_venv/
+test_venv2/
+
+# Desktop shortcut (generated per-machine)
+*.lnk

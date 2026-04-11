@@ -1,0 +1,7 @@
+# === Optional ML Dependencies ===
+# Only needed for local STT (speech-to-text) and local LLM
+# Skip these if you only use cloud AI providers (DashScope/OpenRouter/OpenAI)
+
+torch==2.4.0
+openai-whisper==20240930
+langchain-ollama==0.2.0

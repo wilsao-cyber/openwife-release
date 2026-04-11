@@ -1,0 +1,1729 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>AI Wife</title>
+<style>
+  /* ── Rose Dusk Theme ─────────────────────────────────────────────── */
+  :root {
+    --bg-primary: #1c1e2a;
+    --bg-secondary: #2a2d3e;
+    --bg-tertiary: #353849;
+    --accent: #d4a5a5;
+    --accent-light: #e6c4c0;
+    --accent-muted: rgba(212, 165, 165, 0.15);
+    --text-primary: #f2d7d5;
+    --text-secondary: #a09aab;
+    --text-muted: #6b6679;
+    --glass: rgba(42, 45, 62, 0.5);
+    --glass-border: rgba(212, 165, 165, 0.08);
+    --glass-hover: rgba(42, 45, 62, 0.7);
+    --user-bubble: linear-gradient(135deg, #3a2d3e, #2a2d3e);
+    --ai-bubble: linear-gradient(135deg, #2a2d3e, #1c1e2a);
+    --send-btn: linear-gradient(135deg, #d4a5a5, #e6c4c0);
+    --shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 18px;
+    --radius-pill: 24px;
+    --blur: blur(12px);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 100vw; height: 100vh; overflow: hidden;
+    background: var(--bg-primary); color: var(--text-primary);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    position: relative;
+  }
+
+  /* ── Fullscreen VRM ──────────────────────────────────────────────── */
+  #vrm-container {
+    position: absolute; inset: 0; z-index: 0;
+  }
+  #vrm-container canvas {
+    display: block; width: 100%; height: 100%; position: relative; z-index: 0;
+    filter: contrast(1.1) saturate(1.2) brightness(0.95) sepia(0.05);
+  }
+
+  /* Gradient overlay for chat readability */
+  #vrm-container::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(to left, rgba(28, 30, 42, 0.85) 0%, rgba(28, 30, 42, 0.4) 45%, transparent 70%);
+    z-index: 1;
+  }
+
+  #loading {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: var(--accent); font-size: 16px; z-index: 5;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+  }
+  #loading .spinner {
+    width: 40px; height: 40px; border: 3px solid var(--accent-muted);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading.hidden { display: none; }
+  #error {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #ff6b6b; font-size: 14px; text-align: center;
+    display: none; padding: 20px; z-index: 5;
+  }
+
+  #greeting {
+    display: none !important; /* Disabled — messages show in chat panel instead */
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+  /* ── Floating Top Bar (Capsule) ──────────────────────────────────── */
+  #top-bar {
+    position: absolute; top: 12px; left: 12px;
+    display: flex; gap: 6px; align-items: center; z-index: 20;
+    padding: 6px 12px; background: var(--glass);
+    backdrop-filter: var(--blur); border-radius: 20px;
+    border: 1px solid var(--glass-border);
+  }
+  #top-bar .app-name {
+    font-size: 13px; color: var(--accent-light); font-weight: 600; margin-right: 4px;
+  }
+  select {
+    background: rgba(42, 45, 62, 0.8); color: #f2d7d5;
+    border: 1px solid rgba(212, 165, 165, 0.2); padding: 4px 8px; border-radius: 10px; outline: none;
+    font-size: 12px; cursor: pointer;
+  }
+  select:hover { background: rgba(42, 45, 62, 0.95); border-color: var(--accent); }
+  select option { background: #2a2d3e; color: #f2d7d5; }
+  .render-slider-row { display: flex; align-items: center; gap: 8px; }
+  .render-slider-row label { font-size: 11px; color: var(--text-secondary); width: 90px; flex-shrink: 0; }
+  .render-slider-row input[type=range] { flex: 1; accent-color: var(--accent); height: 4px; }
+  .render-slider-row .slider-val { font-size: 10px; color: var(--text-muted); width: 35px; text-align: right; }
+  .render-section { font-size: 11px; color: var(--accent); font-weight: 600; margin-top: 8px; margin-bottom: 4px; padding-bottom: 2px; border-bottom: 1px solid var(--glass-border); }
+
+  #tts-toggle, #fallback-toggle, #tts-mode-toggle, #deep-thinking-toggle { cursor: pointer; font-size: 12px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--glass-border); background: none; color: var(--text-secondary); margin-left: 2px; }
+  #tts-toggle.on, #fallback-toggle.on, #tts-mode-toggle.on, #deep-thinking-toggle.on { color: var(--accent); border-color: var(--accent); }
+
+  /* ── Chat Panel (Overlay Right) ──────────────────────────────────── */
+  #chat-panel {
+    position: absolute; top: 50px; bottom: 68px; right: 0;
+    width: 55%; max-width: 450px; min-width: 280px;
+    display: flex; flex-direction: column; z-index: 10;
+    pointer-events: none; /* Let touches pass through to 3D canvas */
+  }
+  #messages {
+    flex: 1; overflow-y: auto; padding: 12px 16px 72px 16px; min-height: 0;
+    display: flex; flex-direction: column; gap: 10px;
+    scroll-behavior: smooth;
+    pointer-events: none; /* Let touches pass through empty space */
+  }
+  #messages .msg {
+    pointer-events: auto; /* Message bubbles receive touches */
+  }
+  #input-bar, #scroll-bottom-btn, .top-bar {
+    pointer-events: auto; /* Input bar and buttons always clickable */
+  }
+  #messages::-webkit-scrollbar { width: 4px; }
+  #messages::-webkit-scrollbar-track { background: transparent; }
+  #messages::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 2px; opacity: 0.5; }
+
+  #chat-resize-handle { display: none; }
+
+  #scroll-bottom-btn {
+    position: absolute; bottom: 8px; right: 16px; z-index: 15;
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--glass); backdrop-filter: var(--blur);
+    border: 1px solid var(--glass-border); cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+  }
+  #scroll-bottom-btn svg { width: 16px; height: 16px; fill: var(--accent); }
+  #scroll-bottom-btn.visible { display: flex; }
+  #scroll-bottom-btn:hover { background: var(--glass-hover); }
+
+  /* ── Chat Bubbles ────────────────────────────────────────────────── */
+  .timing-badge { font-size: 9px; color: var(--text-muted); margin-top: 4px; }
+
+  .msg {
+    max-width: 85%; padding: 10px 14px; border-radius: var(--radius-lg);
+    font-size: 13px; line-height: 1.6; word-wrap: break-word;
+    box-shadow: var(--shadow); animation: msgAppear 0.2s ease;
+  }
+  @keyframes msgAppear { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  .msg.user {
+    align-self: flex-end; background: var(--user-bubble);
+    color: var(--text-primary); border-bottom-right-radius: 4px;
+  }
+  .msg.ai {
+    align-self: flex-start; background: var(--ai-bubble);
+    color: var(--text-primary); border-bottom-left-radius: 4px;
+    border-left: 2px solid var(--accent);
+  }
+  .msg.ai .emotion-tag { font-size: 10px; color: var(--accent); margin-bottom: 3px; font-weight: 500; }
+  .msg.ai .timing-badge { font-size: 9px; color: var(--text-muted); margin-top: 6px; }
+
+  .tts-btn { display: inline-block; cursor: pointer; font-size: 14px; margin-left: 6px; opacity: 0.5; transition: all 0.2s; user-select: none; }
+  .tts-btn:hover { opacity: 1; transform: scale(1.1); }
+  .tts-btn.playing { opacity: 1; animation: pulse 1s infinite; }
+
+  .ja-toggle { display: inline-block; cursor: pointer; font-size: 11px; margin-left: 6px; opacity: 0.4; user-select: none; color: var(--accent); transition: opacity 0.2s; }
+  .ja-toggle:hover { opacity: 1; }
+  .ja-drawer { display: none; margin-top: 6px; padding: 8px 10px; background: var(--accent-muted); border-left: 2px solid var(--accent); border-radius: 4px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+  .ja-drawer.open { display: block; }
+
+  .tts-loading { display: inline-block; font-size: 10px; color: var(--accent); margin-left: 6px; }
+  .tts-loading::after { content: ''; animation: dots 1.2s steps(4) infinite; }
+  @keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+
+  /* Media */
+  .media-thumb { max-width: 280px; border-radius: var(--radius-sm); cursor: pointer; margin: 6px 0; transition: all 0.2s; box-shadow: var(--shadow); }
+  .media-thumb:hover { opacity: 0.9; transform: scale(1.02); }
+  .content-preview { display: inline-block; cursor: pointer; margin: 6px 0; padding: 8px 12px; background: var(--accent-muted); border-left: 2px solid var(--accent); border-radius: 6px; max-width: 280px; transition: background 0.2s; }
+  .content-preview:hover { background: rgba(212, 165, 165, 0.2); }
+  .content-preview-title { font-weight: 600; font-size: 12px; color: var(--accent); }
+  .content-preview-snippet { font-size: 11px; color: var(--text-muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Lightbox */
+  #lightbox { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(28, 30, 42, 0.95); z-index: 9999; justify-content: center; align-items: center; }
+  #lightbox.open { display: flex; }
+  #lightbox-close { position: absolute; top: 16px; right: 24px; font-size: 28px; color: var(--accent); cursor: pointer; z-index: 10000; transition: color 0.2s; }
+  #lightbox-close:hover { color: var(--accent-light); }
+  #lightbox-img { max-width: 90%; max-height: 90%; object-fit: contain; transition: transform 0.2s; border-radius: var(--radius-sm); }
+  #lightbox-richtext { max-width: 800px; max-height: 85vh; overflow-y: auto; background: var(--bg-secondary); color: var(--text-primary); padding: 24px; border-radius: var(--radius-md); font-size: 14px; line-height: 1.7; }
+  #lightbox-nav { position: absolute; bottom: 20px; color: var(--text-secondary); font-size: 13px; }
+  .lb-arrow { position: absolute; top: 50%; font-size: 32px; color: var(--accent); cursor: pointer; padding: 12px; user-select: none; transition: color 0.2s; }
+  .lb-arrow:hover { color: var(--accent-light); }
+  #lb-prev { left: 16px; }
+  #lb-next { right: 16px; }
+
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .typing-indicator { display: inline-flex; gap: 4px; padding: 4px 0; }
+  .typing-indicator span { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); opacity: 0.4; animation: blink 1.4s infinite both; }
+  .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 0%,80%,100%{opacity:0.4} 40%{opacity:1} }
+
+  .msg.notice { align-self: center; background: var(--accent-muted); color: var(--accent); font-size: 11px; border: 1px dashed rgba(212, 165, 165, 0.2); max-width: 90%; text-align: center; }
+  .msg.error { align-self: center; background: rgba(255, 100, 100, 0.1); color: #ff8a8a; font-size: 11px; }
+
+  /* Plan card */
+  .plan-card {
+    background: var(--glass); backdrop-filter: var(--blur);
+    border: 1px solid var(--glass-border); border-left: 2px solid var(--accent);
+    border-radius: var(--radius-sm); padding: 10px; margin-top: 6px; font-size: 12px; color: var(--text-primary);
+  }
+  .plan-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .plan-actions button { padding: 5px 14px; border: none; border-radius: var(--radius-pill); cursor: pointer; color: white; font-size: 12px; transition: transform 0.15s; }
+  .plan-actions button:hover { transform: scale(1.05); }
+  .btn-confirm { background: linear-gradient(135deg, #5a9e6f, #4a8e5f); }
+  .btn-deny { background: linear-gradient(135deg, #c06060, #a04040); }
+
+  .tool-card {
+    background: var(--bg-primary); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); padding: 0; margin-top: 6px; font-size: 11px; overflow: hidden;
+  }
+  .tool-header { padding: 6px 8px; background: var(--accent-muted); cursor: pointer; color: var(--text-secondary); }
+  .tool-body { padding: 8px; display: none; color: var(--text-muted); border-top: 1px solid var(--glass-border); white-space: pre-wrap; word-break: break-all; max-height: 150px; overflow-y: auto; }
+  .tool-card.expanded .tool-body { display: block; }
+
+  /* ── Floating Input Bar ──────────────────────────────────────────── */
+  #input-bar {
+    position: absolute; bottom: 12px; left: 12px; right: 12px; z-index: 20;
+    display: flex; gap: 8px; padding: 8px 14px; align-items: center;
+    background: var(--glass); backdrop-filter: var(--blur);
+    border-radius: var(--radius-pill); border: 1px solid var(--glass-border);
+  }
+  #settings-btn { background: none; border: none; font-size: 18px; cursor: pointer; opacity: 0.5; transition: opacity 0.2s; }
+  #settings-btn:hover { opacity: 1; }
+  #input-bar input {
+    flex: 1; padding: 8px 12px; border-radius: var(--radius-pill);
+    border: none; background: transparent;
+    color: var(--text-primary); font-size: 13px; outline: none;
+  }
+  #input-bar input::placeholder { color: var(--text-muted); }
+  #mic-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: none; border: 1px solid var(--glass-border); cursor: pointer;
+    font-size: 16px; display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s; opacity: 0.6;
+  }
+  #mic-btn:hover { opacity: 1; }
+  #mic-btn.recording {
+    opacity: 1; background: rgba(255, 80, 80, 0.3); border-color: #ff5050;
+    animation: pulse 1s infinite;
+  }
+  #input-bar button#send-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--send-btn); border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(212, 165, 165, 0.3);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  #input-bar button#send-btn:hover { transform: scale(1.08); box-shadow: 0 4px 16px rgba(212, 165, 165, 0.4); }
+  #input-bar button#send-btn svg { width: 16px; height: 16px; fill: var(--bg-primary); }
+
+  /* ── Settings Modal ──────────────────────────────────────────────── */
+  #settings-modal {
+    position: fixed; top: 0; right: 0; width: min(520px, 90vw); height: 100vh;
+    background: rgba(42, 45, 62, 0.92); backdrop-filter: blur(16px);
+    z-index: 100; transform: translateX(100%);
+    transition: transform 0.3s ease;
+    border-left: 1px solid var(--glass-border);
+  }
+  #settings-modal.visible { transform: translateX(0); }
+  #settings-modal.hidden { transform: translateX(100%); pointer-events: none; }
+  .modal-content {
+    background: transparent; width: 100%; height: 100%;
+    border-radius: 0; border: none;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .modal-header { padding: 16px; border-bottom: 1px solid var(--glass-border); display: flex; justify-content: space-between; align-items: center; }
+  .modal-header h2 { font-size: 16px; color: var(--accent); font-weight: 600; }
+  #close-settings { background: none; border: none; color: var(--text-secondary); font-size: 18px; cursor: pointer; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 12px; }
+  .tab-btn { padding: 6px 10px; border: none; background: none; color: var(--text-muted); cursor: pointer; font-size: 11px; border-radius: 10px; transition: all 0.2s; white-space: nowrap; }
+  .tab-btn.active { color: var(--accent); background: var(--accent-muted); }
+  .tab-btn:hover { color: var(--text-primary); }
+  .tab-body { flex: 1; padding: 16px; overflow-y: auto; display: none; }
+  .tab-body.active { display: block; }
+
+  /* ── Setup Screen ────────────────────────────────────────────────── */
+  #setup-screen {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background: linear-gradient(135deg, #1c1e2a 0%, #2a2d3e 50%, #1c1e2a 100%);
+    z-index: 1000; display: flex; align-items: center; justify-content: center;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+  #setup-screen.hidden { opacity: 0; pointer-events: none; transform: scale(1.03); visibility: hidden; }
+
+  .setup-card {
+    background: rgba(42, 45, 62, 0.8); backdrop-filter: var(--blur);
+    border: 1px solid var(--glass-border); border-radius: 20px;
+    padding: 32px; width: 90%; max-width: 420px;
+    max-height: 90vh; overflow-y: auto;
+    box-shadow: var(--shadow-lg);
+  }
+  .setup-title { text-align: center; font-size: 26px; color: var(--accent-light); margin-bottom: 4px; font-weight: 300; letter-spacing: 2px; }
+  .setup-subtitle { text-align: center; font-size: 12px; color: var(--text-muted); margin-bottom: 28px; }
+  .setup-field { margin-bottom: 16px; }
+  .setup-field label { display: block; font-size: 12px; color: var(--accent); margin-bottom: 6px; font-weight: 500; }
+  .setup-field select, .setup-field input {
+    width: 100%; padding: 10px 14px; border-radius: var(--radius-sm);
+    border: 1px solid var(--glass-border); background: rgba(28, 30, 42, 0.6);
+    color: var(--text-primary); font-size: 13px; outline: none; transition: border-color 0.2s;
+  }
+  .setup-field select:focus, .setup-field input:focus { border-color: var(--accent); }
+
+  .test-btn {
+    width: 100%; padding: 12px; border-radius: var(--radius-sm); border: none;
+    background: var(--send-btn); color: var(--bg-primary); font-size: 14px; cursor: pointer;
+    font-weight: 600; margin-bottom: 16px; transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .test-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .test-btn:hover:not(:disabled) { transform: scale(1.02); box-shadow: 0 4px 16px rgba(212, 165, 165, 0.3); }
+
+  .test-results { margin-bottom: 16px; }
+  .test-item { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12px; color: var(--text-secondary); }
+  .test-item .status {
+    width: 18px; height: 18px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: bold;
+  }
+  .test-item .status.ok { background: #5a9e6f; color: white; }
+  .test-item .status.fail { background: #c06060; color: white; }
+  .test-item .status.pending { background: var(--bg-tertiary); color: var(--text-muted); }
+  .test-item .status.testing { background: var(--accent); color: var(--bg-primary); animation: pulse 1s infinite; }
+
+  .enter-btn {
+    width: 100%; padding: 14px; border-radius: var(--radius-sm); border: none;
+    background: linear-gradient(135deg, #5a9e6f, #4a8e5f); color: white;
+    font-size: 15px; cursor: pointer; font-weight: 600;
+    opacity: 0.3; pointer-events: none; transition: all 0.3s;
+  }
+  .enter-btn.ready { opacity: 1; pointer-events: auto; }
+  .enter-btn:hover { transform: scale(1.02); box-shadow: 0 4px 16px rgba(90, 158, 111, 0.3); }
+
+  .setup-loading { text-align: center; padding: 20px; color: var(--accent); }
+  .setup-loading .spinner {
+    width: 32px; height: 32px; border: 3px solid var(--accent-muted);
+    border-top-color: var(--accent); border-radius: 50%; margin: 0 auto 12px;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* Toast */
+  #toast {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+    background: var(--glass); backdrop-filter: var(--blur);
+    border: 1px solid var(--glass-border); border-radius: var(--radius-pill);
+    padding: 10px 20px; color: var(--text-primary);
+    font-size: 13px; z-index: 2000; opacity: 0; pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  #toast.show { opacity: 1; pointer-events: none; }
+
+  /* Model switch overlay */
+  #model-switch-overlay {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(28, 30, 42, 0.8); backdrop-filter: blur(4px);
+    z-index: 999; display: none;
+    align-items: center; justify-content: center; flex-direction: column; gap: 12px;
+  }
+  #model-switch-overlay.show { display: flex; }
+  #model-switch-overlay span { color: #FF69B4; font-size: 14px; }
+  .tabs { display: flex; background: #0f3460; }
+  .tab-btn { flex: 1; padding: 10px; border: none; background: none; color: #aaa; cursor: pointer; }
+  .tab-btn.active { color: #FF69B4; border-bottom: 2px solid #FF69B4; background: rgba(255,105,180,0.1); }
+  .tab-body { flex: 1; padding: 16px; overflow-y: auto; display: none; }
+  .tab-body.active { display: block; }
+  
+  #soul-editor { width: 100%; height: 85%; background: #1a1a2e; color: #eee; border: 1px solid #555; padding: 8px; border-radius: 6px; font-family: monospace; resize: none; }
+  #save-soul-btn { margin-top: 10px; width: 100%; padding: 10px; background: #FF69B4; color: white; border: none; border-radius: 6px; cursor: pointer; }
+  
+  .memory-item, .hb-item { padding: 10px; background: #1a1a2e; margin-bottom: 8px; border-radius: 6px; border: 1px solid #333; display: flex; justify-content: space-between; align-items: flex-start; }
+  .hb-item .info { flex: 1; }
+  .hb-item .cron { color: #FF69B4; font-family: monospace; font-size: 12px; }
+  .hb-item .action { font-size: 14px; margin-top: 4px; color: #eee; }
+  .hb-item button, .memory-item button { background: #f44336; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .hb-item button.btn-toggle { background: #555; }
+  .hb-item button.btn-toggle.enabled { background: #4CAF50; }
+</style>
+</head>
+<body>
+
+<div id="vrm-container">
+  <div id="top-bar">
+    <span class="app-name">🌸 小愛</span>
+    <select id="mode-selector">
+      <option value="auto">自動</option>
+      <option value="chat">聊天</option>
+      <option value="assist">協助</option>
+    </select>
+    <select id="lang-selector">
+      <option value="zh-TW">繁體中文</option>
+      <option value="ja">日本語</option>
+      <option value="en">English</option>
+    </select>
+    <button id="tts-toggle" class="on" title="語音開關">🔊</button>
+    <button id="tts-mode-toggle" title="串流播放 / 完整播放">⚡</button>
+    <button id="fallback-toggle" title="使用備用模型 (無審查)">🔓</button>
+    <button id="deep-thinking-toggle" title="深度思考（解鎖 token 上限）">🧠</button>
+    <select id="scene-selector" title="切換場景">
+      <option value="home">🏠 居家</option>
+      <option value="sakura">🌸 櫻花</option>
+      <option value="fantasy">✨ 奇幻</option>
+      <option value="night">🌃 夜景</option>
+    </select>
+    <span id="model-display" style="font-size:11px;color:var(--text-muted);padding:2px 8px;background:var(--accent-muted);border-radius:10px;cursor:default;" title="在設定中切換模型">📡</span>
+  </div>
+  <div id="loading"><div class="spinner"></div><span>Loading model...</span></div>
+  <div id="error"></div>
+</div>
+
+<div id="chat-panel">
+  <div id="chat-resize-handle"></div>
+  <div id="messages"></div>
+  <button id="scroll-bottom-btn" title="Scroll to bottom">
+    <svg viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+  </button>
+  <div id="input-bar">
+    <button id="settings-btn" title="Settings">⚙️</button>
+    <input type="text" id="chat-input" placeholder="輸入訊息..." autocomplete="off">
+    <button id="mic-btn" title="按住說話">🎙️</button>
+    <button id="send-btn" title="Send">
+      <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="setup-screen">
+  <div class="setup-card">
+    <div class="setup-title">🌸 AI Wife</div>
+    <div class="setup-subtitle">選擇模型並測試連線</div>
+    <div class="setup-field">
+      <label>運行方式</label>
+      <select id="setup-provider">
+        <option value="dashscope">☁️ DashScope（推薦）</option>
+        <option value="openrouter">☁️ OpenRouter（無審查）</option>
+        <option value="openai">☁️ OpenAI</option>
+        <option value="ollama">🖥️ 本機 Ollama（進階）</option>
+      </select>
+    </div>
+    <div class="setup-field" id="setup-local-model-field">
+      <label>本機模型</label>
+      <select id="setup-model">
+        <option value="smart7">Qwen 2.5 7B（快速）</option>
+        <option value="smart9">Qwen 3.5 9B（平衡）</option>
+        <option value="ultra">Qwen 3.5 27B（高品質）</option>
+      </select>
+    </div>
+    <div id="setup-cloud-fields" style="display:none;">
+      <div class="setup-field">
+        <label>雲端模型</label>
+        <input id="setup-cloud-model-search" type="text" placeholder="搜尋模型..." style="width:100%;padding:10px 14px;margin-bottom:6px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:var(--radius-sm);box-sizing:border-box;outline:none;font-size:13px;">
+        <select id="setup-cloud-model" style="width:100%;padding:10px 14px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:var(--radius-sm);box-sizing:border-box;font-size:13px;outline:none;">
+          <option value="">載入中...</option>
+        </select>
+      </div>
+      <div class="setup-field">
+        <label>API Key</label>
+        <input id="setup-api-key" type="password" placeholder="sk-..." style="width:100%;padding:8px;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
+      </div>
+    </div>
+    <div id="setup-fallback-fields" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #333;">
+      <label style="color:#FF69B4;font-size:13px;font-weight:bold;">⚡ Fallback API（內容被攔截時自動切換）</label>
+      <select id="setup-fallback-provider" style="width:100%;padding:8px;margin:8px 0;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;">
+        <option value="">不使用 Fallback</option>
+        <option value="openrouter">OpenRouter（無審查）</option>
+        <option value="dashscope">DashScope</option>
+        <option value="openai">OpenAI</option>
+      </select>
+      <input id="setup-fallback-model-search" type="text" placeholder="搜尋模型..." style="width:100%;padding:10px 14px;margin:4px 0;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:var(--radius-sm);box-sizing:border-box;font-size:13px;outline:none;">
+      <select id="setup-fallback-model" style="width:100%;padding:10px 14px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:var(--radius-sm);box-sizing:border-box;font-size:13px;outline:none;">
+        <option value="">選擇 Fallback provider 後載入</option>
+      </select>
+      <input id="setup-fallback-key" type="password" placeholder="Fallback API Key" style="width:100%;padding:8px;margin:4px 0;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
+    </div>
+    <div class="setup-field">
+      <label>語言</label>
+      <select id="setup-lang">
+        <option value="zh-TW">繁體中文</option>
+        <option value="ja">日本語</option>
+        <option value="en">English</option>
+      </select>
+    </div>
+    <button class="test-btn" id="test-connection-btn">測試連線</button>
+    <div class="test-results" id="test-results">
+      <div class="test-item"><span class="status pending" id="test-llm">?</span><span>LLM 模型</span><span id="test-llm-detail" style="margin-left:auto;color:#888;font-size:11px;"></span></div>
+      <div class="test-item"><span class="status pending" id="test-tts">?</span><span>TTS 語音合成</span><span id="test-tts-detail" style="margin-left:auto;color:#888;font-size:11px;"></span></div>
+      <div class="test-item"><span class="status pending" id="test-stt">?</span><span>STT 語音辨識</span><span id="test-stt-detail" style="margin-left:auto;color:#888;font-size:11px;"></span></div>
+      <div class="test-item"><span class="status pending" id="test-skills">?</span><span>Skills 工具</span><span id="test-skills-detail" style="margin-left:auto;color:#888;font-size:11px;"></span></div>
+    </div>
+    <button class="enter-btn" id="enter-btn">進入 💕</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="lightbox">
+  <span id="lightbox-close">&times;</span>
+  <span class="lb-arrow" id="lb-prev">&#10094;</span>
+  <span class="lb-arrow" id="lb-next">&#10095;</span>
+  <img id="lightbox-img" style="display:none;">
+  <div id="lightbox-richtext" style="display:none;"></div>
+  <div id="lightbox-nav"></div>
+</div>
+<div id="model-switch-overlay"><div class="spinner"></div><span>切換模型中...</span></div>
+
+<div id="settings-modal" class="hidden">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>系統設定 Settings</h2>
+      <button id="close-settings">✕</button>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="tab-memory">記憶區</button>
+      <button class="tab-btn" data-tab="tab-soul">核心靈魂</button>
+      <button class="tab-btn" data-tab="tab-heartbeat">定時任務</button>
+      <button class="tab-btn" data-tab="tab-provider">LLM 供應商</button>
+      <button class="tab-btn" data-tab="tab-voice">語音</button>
+      <button class="tab-btn" data-tab="tab-sfx">音效</button>
+      <button class="tab-btn" data-tab="tab-render">渲染</button>
+      <button class="tab-btn" data-tab="tab-music">音樂</button>
+      <button class="tab-btn" data-tab="tab-character">角色</button>
+      <button class="tab-btn" data-tab="tab-animations">動作</button>
+    </div>
+    <div class="tab-body active" id="tab-memory">
+      <div id="memory-list">Loading...</div>
+    </div>
+    <div class="tab-body" id="tab-soul">
+      <label style="color:#FF69B4;font-size:13px;font-weight:bold;">SOUL.md — AI 老婆的性格定義</label>
+      <textarea id="soul-editor"></textarea>
+      <label style="color:#FF69B4;font-size:13px;font-weight:bold;margin-top:10px;display:block;">PROFILE.md — 用戶偏好與資訊</label>
+      <textarea id="profile-editor" style="width:100%;height:35%;background:#1a1a2e;color:#eee;border:1px solid #555;padding:8px;border-radius:6px;font-family:monospace;resize:none;"></textarea>
+      <button id="save-soul-btn">儲存修改</button>
+    </div>
+    <div class="tab-body" id="tab-heartbeat">
+      <div id="heartbeat-list">Loading...</div>
+    </div>
+    <div class="tab-body" id="tab-provider">
+      <label style="color:#FF69B4;font-size:13px;font-weight:bold;">LLM Provider</label>
+      <select id="provider-select" style="width:100%;padding:8px;margin:8px 0;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;">
+        <option value="ollama">Ollama（本機）</option>
+        <option value="dashscope">Alibaba Cloud / DashScope</option>
+        <option value="openrouter">OpenRouter（無審查）</option>
+        <option value="openai">OpenAI</option>
+        <option value="openai_compatible">OpenAI Compatible</option>
+      </select>
+      <label style="color:#FF69B4;font-size:13px;font-weight:bold;">Base URL</label>
+      <input id="provider-base-url" type="text" placeholder="http://localhost:9090" style="width:100%;padding:8px;margin:8px 0;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
+      <label style="color:#FF69B4;font-size:13px;font-weight:bold;">Model</label>
+      <input id="provider-model" type="text" list="model-suggestions" placeholder="qwen-plus" style="width:100%;padding:8px;margin:8px 0;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
+      <datalist id="model-suggestions">
+        <option value="qwen3-235b-a22b">DashScope: Qwen3 235B MoE</option>
+        <option value="qwen3-32b">DashScope: Qwen3 32B</option>
+        <option value="qwen-plus">DashScope: Qwen Plus</option>
+        <option value="qwen-turbo">DashScope: Qwen Turbo</option>
+        <option value="qwen/qwen3.6-plus:free">OpenRouter: Qwen3.6 Plus（免費）</option>
+        <option value="venice/uncensored:free">OpenRouter: Venice Uncensored（免費/無審查）</option>
+        <option value="qwen/qwen3-235b-a22b">OpenRouter: Qwen3 235B MoE</option>
+        <option value="nousresearch/hermes-3-llama-3.1-405b:free">OpenRouter: Hermes 405B（免費）</option>
+        <option value="cognitivecomputations/dolphin-mistral-24b-venice-edition:free">OpenRouter: Dolphin 24B（免費/無審查）</option>
+        <option value="gpt-4o-mini">OpenAI: GPT-4o Mini</option>
+        <option value="gpt-4o">OpenAI: GPT-4o</option>
+      </datalist>
+      <label style="color:#FF69B4;font-size:13px;font-weight:bold;">API Key</label>
+      <input id="provider-api-key" type="password" placeholder="sk-..." style="width:100%;padding:8px;margin:8px 0;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:6px;box-sizing:border-box;">
+      <div id="provider-status" style="color:#aaa;font-size:12px;margin:4px 0;"></div>
+      <button id="save-provider-btn" style="margin-top:10px;width:100%;padding:10px;background:var(--accent);color:var(--bg-primary);border:none;border-radius:6px;cursor:pointer;font-weight:600;">套用設定</button>
+      <div style="margin:16px 0;border-top:1px solid var(--glass-border);padding-top:12px;">
+        <label style="color:var(--accent);font-size:13px;font-weight:bold;">🔑 其他 API Keys</label>
+        <div style="margin:8px 0;">
+          <label style="color:var(--text-secondary);font-size:11px;">Brave Search API Key</label>
+          <input id="keys-brave" type="password" placeholder="輸入 Brave Search API Key..." style="width:100%;padding:8px;margin:4px 0;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:12px;outline:none;box-sizing:border-box;">
+        </div>
+        <div id="keys-google-status" style="color:var(--text-muted);font-size:11px;margin:6px 0;"></div>
+        <button id="save-keys-btn" style="width:100%;padding:8px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:12px;">儲存 API Keys</button>
+      </div>
+    </div>
+    <div class="tab-body" id="tab-voice">
+      <label style="color:var(--accent);font-size:13px;font-weight:bold;">🎙️ 語音角色</label>
+      <div style="margin:8px 0;">
+        <label style="color:var(--text-secondary);font-size:11px;">正常語音</label>
+        <select id="voice-normal-select" style="width:100%;padding:8px;margin:4px 0;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:12px;outline:none;"></select>
+      </div>
+      <div style="margin:8px 0;">
+        <label style="color:var(--text-secondary);font-size:11px;">親密語音</label>
+        <select id="voice-horny-select" style="width:100%;padding:8px;margin:4px 0;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:12px;outline:none;"></select>
+      </div>
+      <button id="voice-save-btn" style="width:100%;padding:10px;margin:8px 0;background:var(--accent);color:var(--bg-primary);border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px;">套用語音設定</button>
+      <div style="margin:12px 0;border-top:1px solid var(--glass-border);padding-top:12px;">
+        <label style="color:var(--accent);font-size:13px;font-weight:bold;">🔊 試聽</label>
+        <div style="display:flex;gap:8px;margin:8px 0;">
+          <select id="voice-test-profile" style="flex:1;padding:6px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;"></select>
+          <button id="voice-test-btn" style="padding:6px 14px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:11px;">試聽</button>
+        </div>
+        <input id="voice-test-text" type="text" value="ダーリン、おかえりなさい。今日はどんな一日だった？" placeholder="輸入測試文字..." style="width:100%;padding:8px;margin:4px 0;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:12px;outline:none;box-sizing:border-box;">
+        <div id="voice-test-status" style="color:var(--text-muted);font-size:11px;margin:4px 0;"></div>
+      </div>
+      <div style="margin:12px 0;border-top:1px solid var(--glass-border);padding-top:12px;">
+        <label style="color:var(--accent);font-size:13px;font-weight:bold;">🎓 語音訓練</label>
+        <div style="margin:8px 0;">
+          <label style="color:var(--text-secondary);font-size:11px;">建立新角色</label>
+          <div style="display:flex;gap:6px;margin:4px 0;">
+            <input id="train-name" type="text" placeholder="角色名稱" style="flex:1;padding:6px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;box-sizing:border-box;">
+            <select id="train-lang" style="padding:6px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;">
+              <option value="ja">日本語</option>
+              <option value="zh">中文</option>
+              <option value="en">English</option>
+            </select>
+            <button id="train-create-btn" style="padding:6px 10px;background:var(--accent);color:var(--bg-primary);border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;">建立</button>
+          </div>
+          <div id="train-create-status" style="color:var(--text-muted);font-size:10px;margin:2px 0;"></div>
+        </div>
+        <div style="margin:8px 0;">
+          <label style="color:var(--text-secondary);font-size:11px;">上傳語音樣本（10-15 秒，WAV/MP3）</label>
+          <select id="train-profile-select" style="width:100%;padding:6px;margin:4px 0;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;"></select>
+          <input id="train-file" type="file" accept=".wav,.mp3,.m4a,.flac,.ogg" style="width:100%;margin:4px 0;font-size:10px;color:var(--text-primary);">
+          <textarea id="train-ref-text" placeholder="語音的文字稿（越準確越好）" rows="2" style="width:100%;padding:6px;margin:4px 0;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;box-sizing:border-box;resize:none;"></textarea>
+          <button id="train-upload-btn" style="width:100%;padding:8px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:11px;">上傳樣本</button>
+          <div id="train-upload-status" style="color:var(--text-muted);font-size:10px;margin:4px 0;"></div>
+        </div>
+        <div style="margin:8px 0;">
+          <label style="color:var(--text-secondary);font-size:11px;">已上傳樣本</label>
+          <div id="train-samples-list" style="font-size:10px;color:var(--text-muted);max-height:80px;overflow-y:auto;"></div>
+        </div>
+        <div style="margin:4px 0;padding:6px;background:rgba(212,165,165,0.1);border-radius:6px;font-size:10px;color:var(--text-muted);">
+          ⚠️ 單個樣本建議 10-15 秒。超過可能導致 GPU 記憶體不足。
+        </div>
+      </div>
+      <div style="margin:12px 0;border-top:1px solid var(--glass-border);padding-top:12px;">
+        <label style="color:var(--accent);font-size:13px;font-weight:bold;">⚙️ TTS 服務管理</label>
+        <div id="tts-service-status" style="color:var(--text-muted);font-size:11px;margin:6px 0;">狀態: 檢查中...</div>
+        <div style="display:flex;gap:8px;margin:8px 0;">
+          <button id="tts-kill-btn" style="flex:1;padding:8px;background:rgba(255,80,80,0.2);color:#ff6b6b;border:1px solid rgba(255,80,80,0.3);border-radius:6px;cursor:pointer;font-size:11px;">強制停止</button>
+          <button id="tts-restart-btn" style="flex:1;padding:8px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:11px;">重新啟動</button>
+        </div>
+      </div>
+    </div>
+    <div class="tab-body" id="tab-sfx">
+      <label style="color:var(--accent);font-size:13px;font-weight:bold;">🔊 音效素材庫</label>
+      <div id="sfx-stats" style="color:var(--text-muted);font-size:11px;margin:6px 0;">載入中...</div>
+      <div style="margin:10px 0;border-top:1px solid var(--glass-border);padding-top:10px;">
+        <label style="color:var(--text-secondary);font-size:11px;">上傳音效檔案（WAV/MP3/OGG/FLAC）</label>
+        <input id="sfx-upload-file" type="file" accept=".wav,.mp3,.ogg,.flac,.m4a" multiple style="width:100%;margin:6px 0;font-size:11px;color:var(--text-primary);">
+        <div style="display:flex;gap:8px;margin:6px 0;">
+          <input id="sfx-upload-category" type="text" placeholder="分類（如：環境音、親密音效）" style="flex:1;padding:6px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;box-sizing:border-box;">
+          <button id="sfx-upload-btn" style="padding:6px 14px;background:var(--accent);color:var(--bg-primary);border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;">上傳</button>
+        </div>
+        <div id="sfx-upload-status" style="color:var(--text-muted);font-size:11px;margin:4px 0;"></div>
+      </div>
+      <div style="margin:10px 0;border-top:1px solid var(--glass-border);padding-top:10px;">
+        <label style="color:var(--text-secondary);font-size:11px;">搜尋/試聽</label>
+        <div style="display:flex;gap:8px;margin:6px 0;">
+          <input id="sfx-search-input" type="text" placeholder="搜尋音效（如：雨、手コキ、ベッド）" style="flex:1;padding:6px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;box-sizing:border-box;">
+          <button id="sfx-search-btn" style="padding:6px 14px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:11px;">搜尋</button>
+        </div>
+        <div id="sfx-results" style="max-height:200px;overflow-y:auto;"></div>
+      </div>
+      <div style="margin:10px 0;border-top:1px solid var(--glass-border);padding-top:10px;">
+        <label style="color:var(--text-secondary);font-size:11px;">分類一覽</label>
+        <div id="sfx-categories" style="font-size:11px;color:var(--text-muted);margin:6px 0;"></div>
+      </div>
+    </div>
+    <div class="tab-body" id="tab-render">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <label style="color:var(--accent);font-size:13px;font-weight:bold;">🎨 渲染設定</label>
+        <select id="render-preset-select" style="flex:1;padding:4px 8px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;">
+        </select>
+      </div>
+      <div id="render-sliders" style="display:flex;flex-direction:column;gap:10px;">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button id="reset-render-btn" style="flex:1;padding:8px;background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:12px;">重置</button>
+        <button id="save-preset-btn" style="flex:1;padding:8px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:12px;">存為新模式</button>
+      </div>
+    </div>
+    <div class="tab-body" id="tab-music">
+      <label style="color:var(--accent);font-size:13px;font-weight:bold;display:block;margin-bottom:10px;">🎵 音樂設定</label>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:var(--text-secondary);">背景音樂</span>
+          <button id="bgm-toggle" style="padding:2px 10px;border-radius:10px;border:1px solid var(--glass-border);background:none;color:var(--text-secondary);cursor:pointer;font-size:12px;">ON</button>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">BGM 音量</label>
+          <input id="bgm-vol-slider" type="range" min="0" max="100" value="15" style="width:100%;accent-color:var(--accent);">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">選曲</label>
+          <select id="bgm-select" style="width:100%;padding:6px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;">
+            <option value="auto">自動（跟隨場景）</option>
+            <option value="/audio-assets/bgm/kks_bgm_00.wav">早晨日常</option>
+            <option value="/audio-assets/bgm/kks_bgm_01.wav">商店悠閒</option>
+            <option value="/audio-assets/bgm/kks_bgm_02.wav">H 場景</option>
+            <option value="/audio-assets/bgm/kks_bgm_03.wav">放鬆美容</option>
+            <option value="/audio-assets/bgm/kks_bgm_06.wav">邂逅相遇</option>
+            <option value="/audio-assets/bgm/kks_bgm_07.wav">日常對話</option>
+            <option value="/audio-assets/bgm/kks_bgm_08.wav">戀人氛圍</option>
+            <option value="/audio-assets/bgm/kks_bgm_09.wav">約會跟隨</option>
+            <option value="/audio-assets/bgm/kks_bgm_13.wav">回憶感傷</option>
+            <option value="/audio-assets/bgm/kks_bgm_14.wav">秘密海灘</option>
+            <option value="/audio-assets/bgm/kks_bgm_15.wav">夜晚散步</option>
+            <option value="/audio-assets/bgm/kks_bgm_16.wav">浪漫</option>
+            <option value="/audio-assets/bgm/kks_bgm_17.wav">悲傷</option>
+            <option value="/audio-assets/bgm/kks_bgm_22.wav">套房</option>
+            <option value="/audio-assets/bgm/kks_bgm_23.wav">套房約會</option>
+          </select>
+        </div>
+        <div style="border-top:1px solid var(--glass-border);padding-top:10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:12px;color:var(--text-secondary);">環境音效</span>
+            <button id="ambient-toggle" style="padding:2px 10px;border-radius:10px;border:1px solid var(--glass-border);background:none;color:var(--text-secondary);cursor:pointer;font-size:12px;">ON</button>
+          </div>
+          <label style="font-size:11px;color:var(--text-muted);display:block;margin:6px 0 4px;">環境音量</label>
+          <input id="ambient-vol-slider" type="range" min="0" max="100" value="10" style="width:100%;accent-color:var(--accent);">
+        </div>
+        <div style="border-top:1px solid var(--glass-border);padding-top:10px;margin-top:10px;">
+          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:6px;">自訂 BGM</label>
+          <div id="custom-bgm-list" style="display:flex;flex-direction:column;gap:4px;max-height:120px;overflow-y:auto;margin-bottom:8px;"></div>
+          <input id="bgm-upload-input" type="file" accept=".wav,.mp3,.ogg,.flac,.m4a" hidden>
+          <button id="bgm-upload-btn" style="width:100%;padding:8px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:11px;">上傳 BGM</button>
+          <div id="bgm-upload-status" style="font-size:10px;color:var(--text-muted);margin-top:4px;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="tab-body" id="tab-character">
+      <label style="color:var(--accent);font-size:13px;font-weight:bold;display:block;margin-bottom:10px;">👤 角色模型</label>
+      <div id="current-vrm-info" style="font-size:11px;color:var(--text-muted);margin-bottom:10px;padding:6px 10px;background:var(--accent-muted);border-radius:6px;">目前：character.vrm</div>
+      <div id="vrm-model-list" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;margin-bottom:12px;"></div>
+      <div style="border-top:1px solid var(--glass-border);padding-top:10px;">
+        <input id="vrm-upload-input" type="file" accept=".vrm" hidden>
+        <input id="pmx-upload-input" type="file" accept=".pmx" hidden>
+        <div style="display:flex;gap:6px;">
+          <button id="vrm-upload-btn" style="flex:1;padding:10px;background:var(--accent);color:var(--bg-primary);border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px;">上傳 VRM</button>
+          <button id="pmx-upload-btn" style="flex:1;padding:10px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-weight:600;font-size:12px;">匯入 PMX</button>
+        </div>
+        <div id="vrm-upload-status" style="color:var(--text-muted);font-size:11px;margin-top:4px;"></div>
+      </div>
+    </div>
+    <div class="tab-body" id="tab-animations">
+      <label style="color:var(--accent);font-size:13px;font-weight:bold;display:block;margin-bottom:10px;">💃 動作管理</label>
+      <div id="anim-list" style="display:flex;flex-direction:column;gap:6px;max-height:240px;overflow-y:auto;margin-bottom:12px;"></div>
+      <div style="border-top:1px solid var(--glass-border);padding-top:10px;">
+        <label style="color:var(--text-secondary);font-size:11px;display:block;margin-bottom:6px;">上傳新動作 (.fbx)</label>
+        <div style="display:flex;gap:6px;margin-bottom:6px;">
+          <input id="anim-id-input" type="text" placeholder="動作 ID（英文）" style="flex:1;padding:6px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;box-sizing:border-box;">
+          <input id="anim-label-input" type="text" placeholder="顯示名稱" style="flex:1;padding:6px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;box-sizing:border-box;">
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+          <label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:3px;"><input id="anim-loop-check" type="checkbox" style="accent-color:var(--accent);"> 循環</label>
+          <select id="anim-return-select" style="flex:1;padding:4px 6px;background:rgba(28,30,42,0.6);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;font-size:11px;outline:none;">
+            <option value="idle">結束後回到 idle</option>
+            <option value="">不自動回歸</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <input id="anim-upload-input" type="file" accept=".fbx" hidden>
+          <button id="anim-upload-btn" style="flex:1;padding:8px;background:var(--accent);color:var(--bg-primary);border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px;">選擇 FBX 並上傳</button>
+        </div>
+        <div id="anim-upload-status" style="color:var(--text-muted);font-size:11px;margin-top:4px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./static/js/three.module.min.js",
+    "three/addons/": "./static/js/",
+    "@pixiv/three-vrm": "./static/js/three-vrm.module.min.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/GLTFLoader.js';
+import { FBXLoader } from 'three/addons/FBXLoader.js';
+import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import {
+  SCENE_BGM, SCENE_AMBIENT, switchSceneAudio, triggerEmotionBgm,
+  playBgm, playAmbient, stopAmbient, preloadUiSfx, playUiSfx,
+  ensureAudioCtx, playSfx, stopSfx,
+  stopTTS,
+  isTtsEnabled, setTtsEnabled, isBgmEnabled, setBgmEnabled,
+  getBgmVolume, setBgmVolume, getAmbientVolume, setAmbientVolume,
+  isUiSfxEnabled, setUiSfxEnabled,
+  getBgmGain, getBgmAudio, getCurrentBgmUrl, setCurrentBgmUrl,
+  getAmbientGain, hasAudioCtx,
+  getLipSyncValue, getLipSyncValues,
+} from './static/js/audio.js';
+import { initSettings, showToast, updateCtx, getSceneAudioSwitcher } from './static/js/settings.js';
+import { initChat, langSel } from './static/js/chat.js';
+
+// ── Mixamo→VRM Bone Mapping ────────────────────────────────────────
+const MIXAMO_VRM_MAP = {
+  mixamorigHips: 'hips', mixamorigSpine: 'spine', mixamorigSpine1: 'chest',
+  mixamorigSpine2: 'upperChest', mixamorigNeck: 'neck', mixamorigHead: 'head',
+  mixamorigLeftShoulder: 'leftShoulder', mixamorigLeftArm: 'leftUpperArm',
+  mixamorigLeftForeArm: 'leftLowerArm', mixamorigLeftHand: 'leftHand',
+  mixamorigLeftHandThumb1: 'leftThumbMetacarpal', mixamorigLeftHandThumb2: 'leftThumbProximal',
+  mixamorigLeftHandThumb3: 'leftThumbDistal', mixamorigLeftHandIndex1: 'leftIndexProximal',
+  mixamorigLeftHandIndex2: 'leftIndexIntermediate', mixamorigLeftHandIndex3: 'leftIndexDistal',
+  mixamorigLeftHandMiddle1: 'leftMiddleProximal', mixamorigLeftHandMiddle2: 'leftMiddleIntermediate',
+  mixamorigLeftHandMiddle3: 'leftMiddleDistal', mixamorigLeftHandRing1: 'leftRingProximal',
+  mixamorigLeftHandRing2: 'leftRingIntermediate', mixamorigLeftHandRing3: 'leftRingDistal',
+  mixamorigLeftHandPinky1: 'leftLittleProximal', mixamorigLeftHandPinky2: 'leftLittleIntermediate',
+  mixamorigLeftHandPinky3: 'leftLittleDistal',
+  mixamorigRightShoulder: 'rightShoulder', mixamorigRightArm: 'rightUpperArm',
+  mixamorigRightForeArm: 'rightLowerArm', mixamorigRightHand: 'rightHand',
+  mixamorigRightHandThumb1: 'rightThumbMetacarpal', mixamorigRightHandThumb2: 'rightThumbProximal',
+  mixamorigRightHandThumb3: 'rightThumbDistal', mixamorigRightHandIndex1: 'rightIndexProximal',
+  mixamorigRightHandIndex2: 'rightIndexIntermediate', mixamorigRightHandIndex3: 'rightIndexDistal',
+  mixamorigRightHandMiddle1: 'rightMiddleProximal', mixamorigRightHandMiddle2: 'rightMiddleIntermediate',
+  mixamorigRightHandMiddle3: 'rightMiddleDistal', mixamorigRightHandRing1: 'rightRingProximal',
+  mixamorigRightHandRing2: 'rightRingIntermediate', mixamorigRightHandRing3: 'rightRingDistal',
+  mixamorigRightHandPinky1: 'rightLittleProximal', mixamorigRightHandPinky2: 'rightLittleIntermediate',
+  mixamorigRightHandPinky3: 'rightLittleDistal',
+  mixamorigLeftUpLeg: 'leftUpperLeg', mixamorigLeftLeg: 'leftLowerLeg',
+  mixamorigLeftFoot: 'leftFoot', mixamorigLeftToeBase: 'leftToes',
+  mixamorigRightUpLeg: 'rightUpperLeg', mixamorigRightLeg: 'rightLowerLeg',
+  mixamorigRightFoot: 'rightFoot', mixamorigRightToeBase: 'rightToes',
+};
+
+function retargetMixamoClip(clip, fbxRoot, vrm, name) {
+  const tracks = [];
+  const restRotInv = new THREE.Quaternion();
+  const parentRestWorldRot = new THREE.Quaternion();
+  const q = new THREE.Quaternion();
+
+  const hipsNode = fbxRoot.getObjectByName('mixamorigHips');
+  const motionHipsY = hipsNode ? hipsNode.position.y : 1;
+  const vrmHipsY = vrm.humanoid.normalizedRestPose?.hips?.position?.[1] ?? 1;
+  const hipsScale = vrmHipsY / motionHipsY;
+
+  for (const track of clip.tracks) {
+    const [mixName, prop] = track.name.split('.');
+    const vrmBone = MIXAMO_VRM_MAP[mixName];
+    if (!vrmBone) continue;
+
+    const vrmNode = vrm.humanoid.getNormalizedBoneNode(vrmBone);
+    if (!vrmNode) continue;
+
+    const mixNode = fbxRoot.getObjectByName(mixName);
+    if (!mixNode?.parent) continue;
+
+    mixNode.getWorldQuaternion(restRotInv).invert();
+    mixNode.parent.getWorldQuaternion(parentRestWorldRot);
+
+    if (track instanceof THREE.QuaternionKeyframeTrack) {
+      const values = new Float32Array(track.values.length);
+      for (let i = 0; i < track.values.length; i += 4) {
+        q.fromArray(track.values, i)
+          .premultiply(parentRestWorldRot)
+          .multiply(restRotInv);
+        q.toArray(values, i);
+      }
+      tracks.push(new THREE.QuaternionKeyframeTrack(
+        `${vrmNode.name}.${prop}`, track.times, values
+      ));
+    } else if (track instanceof THREE.VectorKeyframeTrack) {
+      const values = new Float32Array(track.values.length);
+      for (let i = 0; i < track.values.length; i++) values[i] = track.values[i] * hipsScale;
+      tracks.push(new THREE.VectorKeyframeTrack(
+        `${vrmNode.name}.${prop}`, track.times, values
+      ));
+    }
+  }
+  return new THREE.AnimationClip(name, clip.duration, tracks);
+}
+
+// ── Animation Controller ───────────────────────────────────────────
+const CROSSFADE = 0.3;
+
+class AnimController {
+  constructor(vrm) {
+    this.vrm = vrm;
+    this.mixer = new THREE.AnimationMixer(vrm.scene);
+    this.actions = new Map();
+    this.entries = new Map();
+    this.actionToId = new Map();
+    this.currentAction = null;
+    this.current = '';
+    this.defaultId = '';
+
+    this.mixer.addEventListener('finished', (e) => {
+      const id = this.actionToId.get(e.action);
+      if (!id) return;
+      const entry = this.entries.get(id);
+      const fallback = entry?.autoReturnTo;
+      if (fallback && fallback !== this.current) this.play(fallback);
+      else if (this.defaultId) this.play(this.defaultId);
+      // Restore idle state when returning to an idle animation
+      isInIdleState = true;
+      idleVariantTimer = 0;
+    });
+  }
+
+  async loadAll(entries) {
+    const fbxLoader = new FBXLoader();
+    for (const entry of entries) {
+      try {
+        const url = `./static/animations/${entry.file}`;
+        const fbx = await fbxLoader.loadAsync(url);
+        const rawClip = fbx.animations.find(c => c.tracks.length > 0);
+        if (!rawClip) continue;
+
+        const clip = retargetMixamoClip(rawClip, fbx, this.vrm, entry.id);
+        if (clip.tracks.length === 0) {
+          console.warn(`Retarget produced 0 tracks for ${entry.id}, raw had ${rawClip.tracks.length} tracks`);
+          continue;
+        }
+        console.log(`Animation ${entry.id}: ${clip.tracks.length} tracks retargeted`);
+        const action = this.mixer.clipAction(clip);
+        const loop = entry.loop ?? true;
+        action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+        if (!loop) action.clampWhenFinished = true;
+
+        this.entries.set(entry.id, entry);
+        this.actions.set(entry.id, action);
+        this.actionToId.set(action, entry.id);
+      } catch (err) {
+        console.warn(`Failed to load animation ${entry.id}:`, err);
+      }
+    }
+    if (entries.length > 0) this.defaultId = entries[0].id;
+  }
+
+  play(id) {
+    const next = this.actions.get(id);
+    if (!next || id === this.current) return;
+
+    const entry = this.entries.get(id);
+    const loop = entry?.loop ?? true;
+    next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+    next.clampWhenFinished = !loop;
+
+    if (this.currentAction) this.currentAction.fadeOut(CROSSFADE);
+    next.reset().fadeIn(CROSSFADE).play();
+    this.currentAction = next;
+    this.current = id;
+  }
+
+  update(delta) { this.mixer.update(delta); }
+}
+
+// ── Scene Setup ────────────────────────────────────────────────────
+const container = document.getElementById('vrm-container');
+const loadingEl = document.getElementById('loading');
+const errorEl = document.getElementById('error');
+
+let scene, camera, renderer, controls, clock;
+let currentVrm = null;
+let animController = null;
+let nextBlinkTime = 0, blinkEndTime = 0;
+
+// ── Mouse/Touch Head Tracking ──────────────────────────────────────
+const DEFAULT_LOOK = new THREE.Vector3(0, 1.3, 10);
+let mouseTarget = new THREE.Vector3(0, 1.3, 10);
+let smoothLookAt = new THREE.Vector3(0, 1.3, 10);
+let currentLookAtWeight = 1.0;
+
+function screenToLookTarget(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+  const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
+  return new THREE.Vector3(nx * 1.5, 1.3 + ny * 0.5, 2.0);
+}
+
+// ── Expression Blending ────────────────────────────────────────────
+let targetExpressions = {};
+let currentExpressions = {};
+const EXPRESSION_LERP_SPEED = 4.0;
+
+// ── Click/Touch Interaction ────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const _clickNDC = new THREE.Vector2();
+let lastPokeTime = 0;
+const POKE_COOLDOWN = 2000;
+let mouseDownPos = null;
+
+// ── Idle Variety ───────────────────────────────────────────────────
+const IDLE_VARIANTS = [
+  { id: 'idle', weight: 5 },
+];
+let idleVariantTimer = 0;
+let nextIdleSwitch = 15 + Math.random() * 15;
+let isInIdleState = true;
+
+function pickWeightedIdle() {
+  const available = IDLE_VARIANTS.filter(v => animController && animController.actions.has(v.id));
+  if (available.length === 0) return 'idle';
+  const total = available.reduce((s, v) => s + v.weight, 0);
+  let r = Math.random() * total;
+  for (const v of available) { r -= v.weight; if (r <= 0) return v.id; }
+  return available[0].id;
+}
+
+// ── Particle System ────────────────────────────────────────────────
+const particles = [];
+
+function createParticleTexture(type) {
+  const c = document.createElement('canvas');
+  c.width = 32; c.height = 32;
+  const ctx = c.getContext('2d');
+  if (type === 'heart') {
+    ctx.fillStyle = '#ff6b9d';
+    ctx.beginPath();
+    ctx.moveTo(16, 28);
+    ctx.bezierCurveTo(2, 18, 2, 6, 10, 6);
+    ctx.bezierCurveTo(14, 6, 16, 10, 16, 10);
+    ctx.bezierCurveTo(16, 10, 18, 6, 22, 6);
+    ctx.bezierCurveTo(30, 6, 30, 18, 16, 28);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = '#ffd700';
+    for (let i = 0; i < 5; i++) {
+      const a = (i * 72 - 90) * Math.PI / 180;
+      const a2 = ((i * 72 + 36) - 90) * Math.PI / 180;
+      ctx.lineTo(16 + Math.cos(a) * 14, 16 + Math.sin(a) * 14);
+      ctx.lineTo(16 + Math.cos(a2) * 6, 16 + Math.sin(a2) * 6);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  return new THREE.CanvasTexture(c);
+}
+
+const heartTex = createParticleTexture('heart');
+const sparkleTex = createParticleTexture('sparkle');
+
+function spawnParticles(position, type) {
+  const tex = type === 'heart' ? heartTex : sparkleTex;
+  for (let i = 0; i < 6; i++) {
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 1.0, depthTest: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(0.08, 0.08, 0.08);
+    sprite.position.copy(position);
+    sprite.position.x += (Math.random() - 0.5) * 0.15;
+    sprite.position.y += (Math.random() - 0.5) * 0.1;
+    scene.add(sprite);
+    particles.push({ sprite, vel: new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.5 + Math.random() * 0.5, (Math.random() - 0.5) * 0.2), life: 1.0 });
+  }
+}
+
+function updateParticles(delta) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= delta * 1.2;
+    p.sprite.position.addScaledVector(p.vel, delta);
+    p.sprite.material.opacity = Math.max(0, p.life);
+    p.sprite.scale.setScalar(0.08 * (0.5 + p.life * 0.5));
+    if (p.life <= 0) {
+      scene.remove(p.sprite);
+      p.sprite.material.dispose();
+      particles.splice(i, 1);
+    }
+  }
+}
+
+// ── Poke Reactions ─────────────────────────────────────────────────
+const pokeReactions = {
+  head:    { expression: 'happy',     anim: 'nod',   particles: 'heart' },
+  body:    { expression: 'happy',     anim: 'shy',   particles: 'heart' },
+  default: { expression: 'happy',     anim: 'wave',  particles: 'heart' }
+};
+
+function handlePoke(clientX, clientY) {
+  if (!currentVrm || Date.now() - lastPokeTime < POKE_COOLDOWN) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  _clickNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  _clickNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(_clickNDC, camera);
+  const hits = raycaster.intersectObject(currentVrm.scene, true);
+  if (hits.length === 0) return;
+
+  lastPokeTime = Date.now();
+  const hit = hits[0];
+  const box = new THREE.Box3().setFromObject(currentVrm.scene);
+  const h = box.max.y - box.min.y;
+  const relY = (hit.point.y - box.min.y) / h;
+
+  let zone = 'default';
+  if (relY > 0.85) zone = 'head';
+  else if (relY > 0.55) zone = 'body';
+
+  const reaction = pokeReactions[zone] || pokeReactions.default;
+  setEmotion(reaction.expression);
+  if (animController && animController.actions.has(reaction.anim)) {
+    animController.play(reaction.anim);
+  }
+  spawnParticles(hit.point, reaction.particles);
+
+  // Auto-return to neutral after 3s
+  setTimeout(() => setEmotion('neutral'), 3000);
+}
+
+// ── Scene Themes ────────────────────────────────────────────────────
+const SCENE_THEMES = {
+  home: {
+    name: '🏠 居家',
+    gradient: 'radial-gradient(ellipse at 50% 30%, #3a2a20 0%, #2a1f18 40%, #1a1510 100%)',
+    ambient: 0xffe8d0, ambientIntensity: 1.0,
+    dir: 0xffd4a0, dirIntensity: 1.0, dirPos: [1, 2, 1],
+    toneMappingExposure: 1.2,
+  },
+  sakura: {
+    name: '🌸 櫻花',
+    gradient: 'radial-gradient(ellipse at 50% 20%, #3a2535 0%, #2a1a25 40%, #1a1018 100%)',
+    ambient: 0xffd0e0, ambientIntensity: 1.1,
+    dir: 0xffe0f0, dirIntensity: 1.0, dirPos: [0.5, 3, 1],
+    toneMappingExposure: 1.3,
+  },
+  fantasy: {
+    name: '✨ 奇幻',
+    gradient: 'radial-gradient(ellipse at 50% 40%, #1a1a38 0%, #12122a 40%, #0a0a1a 100%)',
+    ambient: 0xc0c0ff, ambientIntensity: 0.9,
+    dir: 0xa0a0ff, dirIntensity: 1.0, dirPos: [0, 3, 0.5],
+    toneMappingExposure: 1.1,
+  },
+  night: {
+    name: '🌃 夜景',
+    gradient: 'radial-gradient(ellipse at 50% 60%, #1a1e2a 0%, #0f1218 50%, #080a10 100%)',
+    ambient: 0x8090b0, ambientIntensity: 0.7,
+    dir: 0xffa040, dirIntensity: 0.8, dirPos: [-1, 1.5, 2],
+    toneMappingExposure: 1.0,
+  },
+};
+var currentSceneTheme = 'home';
+var ambientLight, dirLight;
+// Mutable scene audio switcher — initially the imported function,
+// overridden later by music settings to respect manual BGM selection.
+var sceneAudioSwitcher = switchSceneAudio;
+
+function applySceneTheme(themeName) {
+  const theme = SCENE_THEMES[themeName];
+  if (!theme) return;
+  currentSceneTheme = themeName;
+  updateCtx({ currentSceneTheme: themeName });
+  // CSS gradient background behind canvas
+  container.style.background = theme.gradient;
+  // Three.js lighting
+  if (ambientLight) {
+    ambientLight.color.setHex(theme.ambient);
+    ambientLight.intensity = theme.ambientIntensity;
+  }
+  if (dirLight) {
+    dirLight.color.setHex(theme.dir);
+    dirLight.intensity = theme.dirIntensity;
+    dirLight.position.set(...theme.dirPos);
+  }
+  if (renderer) {
+    renderer.toneMappingExposure = theme.toneMappingExposure;
+  }
+  localStorage.setItem('ai-wife-scene', themeName);
+  // Update audio when scene changes (only after user has interacted)
+  if (hasAudioCtx()) getSceneAudioSwitcher()(themeName);
+}
+
+function initScene() {
+  clock = new THREE.Clock();
+  scene = new THREE.Scene();
+
+  const aspect = container.clientWidth / container.clientHeight;
+  camera = new THREE.PerspectiveCamera(30, aspect, 0.1, 100);
+  camera.position.set(0, 1.3, 2.5);
+
+  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+  container.insertBefore(renderer.domElement, container.firstChild);
+
+  // Ambient — warm soft fill (reduced)
+  ambientLight = new THREE.AmbientLight(0xffd8c0, 0.8);
+  scene.add(ambientLight);
+
+  // Key light — warm peach from front-right
+  dirLight = new THREE.DirectionalLight(0xffd0b0, 1.0);
+  dirLight.position.set(1, 2, 1);
+  scene.add(dirLight);
+
+  // Main spotlight — moderate, focused on body not hair
+  const spotMain = new THREE.SpotLight(0xffe0c8, 2.0, 12, Math.PI / 6, 0.5, 0.8);
+  spotMain.position.set(0, 2.5, 3);
+  spotMain.target.position.set(0, 0.8, 0);
+  scene.add(spotMain);
+  scene.add(spotMain.target);
+
+  // Face fill — gentle warm from front
+  const faceFill = new THREE.PointLight(0xffccaa, 1.2, 4, 1);
+  faceFill.position.set(0, 1.0, 2);
+  scene.add(faceFill);
+
+  // Rim light left — warm pink edge
+  const rimLeft = new THREE.DirectionalLight(0xffa080, 0.5);
+  rimLeft.position.set(-2, 1.5, -1);
+  scene.add(rimLeft);
+
+  // Rim light right — subtle warm purple edge
+  const rimRight = new THREE.DirectionalLight(0xd0a0c0, 0.3);
+  rimRight.position.set(2, 1.5, -1);
+  scene.add(rimRight);
+
+  // Apply saved or default scene theme
+  const savedScene = localStorage.getItem('ai-wife-scene') || 'home';
+  applySceneTheme(savedScene);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 1.0, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.1;
+  controls.minDistance = 0.5;
+  controls.maxDistance = 5;
+  controls.enablePan = true;
+  controls.enableZoom = true;
+  controls.enableRotate = true;
+  // Touch: one finger rotate, two finger zoom+pan
+  controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+  controls.update();
+
+  // Prevent default touch gestures on canvas (avoid browser zoom/scroll)
+  renderer.domElement.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
+
+  window.addEventListener('resize', () => {
+    const w = container.clientWidth, h = container.clientHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  });
+}
+
+async function loadModel(url) {
+  loadingEl.classList.remove('hidden');
+  if (currentVrm) { scene.remove(currentVrm.scene); currentVrm = null; animController = null; }
+
+  const loader = new GLTFLoader();
+  loader.register(p => new VRMLoaderPlugin(p));
+
+  try {
+    const gltf = await loader.loadAsync(url);
+    const vrm = gltf.userData.vrm;
+    if (!vrm) { showError('No VRM data found'); return; }
+    VRMUtils.rotateVRM0(vrm);
+    currentVrm = vrm;
+
+    // Enhance materials
+    vrm.scene.traverse((obj) => {
+      if (!obj.isMesh) return;
+      const mat = obj.material;
+      if (!mat) return;
+
+      // Double-sided only for opaque materials (transparent face layers would z-fight)
+      if (!mat.transparent && mat.opacity >= 1.0) {
+        mat.side = THREE.DoubleSide;
+      }
+
+      // MToon materials (from VRM)
+      if (mat.isMToonMaterial || mat.type === 'ShaderMaterial') {
+        // Warmer, more vivid shadow color (instead of grey)
+        if (mat.uniforms) {
+          // MToon shade color → warm pinkish shadow
+          if (mat.uniforms.shadeColorFactor) {
+            const sc = mat.uniforms.shadeColorFactor.value;
+            if (sc && sc.isColor) {
+              sc.lerp(new THREE.Color(0xffc0a0), 0.3); // blend toward warm
+            }
+          }
+          // Boost shading toony for crisper cel-shade
+          if (mat.uniforms.shadingToonyFactor) {
+            mat.uniforms.shadingToonyFactor.value = Math.max(mat.uniforms.shadingToonyFactor.value, 0.8);
+          }
+          // Shift shading to show more lit area (less shadow)
+          if (mat.uniforms.shadingShiftFactor) {
+            mat.uniforms.shadingShiftFactor.value = Math.min(mat.uniforms.shadingShiftFactor.value, -0.1);
+          }
+          // Parametric rim light
+          if (mat.uniforms.parametricRimColorFactor) {
+            mat.uniforms.parametricRimColorFactor.value = new THREE.Color(0xffd0c0);
+          }
+          if (mat.uniforms.parametricRimFresnelPowerFactor) {
+            mat.uniforms.parametricRimFresnelPowerFactor.value = 3.0;
+          }
+          if (mat.uniforms.parametricRimLiftFactor) {
+            mat.uniforms.parametricRimLiftFactor.value = 0.3;
+          }
+        }
+
+        // Keep emissive subtle — don't boost it
+        if (mat.emissiveIntensity > 0.1) {
+          mat.emissiveIntensity *= 0.5;
+        }
+      }
+
+      // Standard materials — boost saturation
+      if (mat.isMeshStandardMaterial || mat.isMeshPhongMaterial) {
+        if (mat.color) {
+          // Slightly warm shift
+          mat.color.offsetHSL(0.02, 0.1, 0.02);
+        }
+      }
+    });
+
+    scene.add(vrm.scene);
+
+    // Auto-center camera (adapt to screen aspect ratio)
+    const box = new THREE.Box3().setFromObject(vrm.scene);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const aspect = window.innerWidth / window.innerHeight;
+    // Portrait screens need more distance to fit the full character
+    const distFactor = aspect < 0.8 ? 1.6 : aspect < 1.0 ? 1.4 : 1.2;
+    controls.target.set(center.x, center.y, center.z);
+    camera.position.set(center.x, center.y + 0.1, center.z + size.y * distFactor);
+    controls.update();
+
+    loadingEl.querySelector('span').textContent = 'Loading animations...';
+
+    // Load animations from registry
+    try {
+      const res = await fetch('./static/animations/registry.json?v=' + Date.now());
+      const entries = await res.json();
+      animController = new AnimController(vrm);
+      await animController.loadAll(entries);
+      animController.play('idle');
+      console.log('Animations loaded:', [...animController.actions.keys()]);
+    } catch (err) {
+      console.warn('Animation load failed, using procedural idle:', err);
+    }
+
+    // Sync shared state with settings module
+    updateCtx({ animController, currentVrm });
+
+    loadingEl.classList.add('hidden');
+    nextBlinkTime = clock.getElapsedTime() + 1;
+  } catch (err) {
+    showError('Failed to load: ' + (err.message || err));
+  }
+}
+
+function showError(msg) {
+  loadingEl.classList.add('hidden');
+  errorEl.textContent = msg;
+  errorEl.style.display = 'block';
+}
+
+const _finalLookAt = new THREE.Vector3();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+
+  if (currentVrm) {
+    // Use FBX animation if available, else fallback to procedural breathing
+    if (animController) {
+      animController.update(delta);
+    } else if (currentVrm.humanoid) {
+      const t = clock.getElapsedTime();
+      const breath = Math.sin(t * 0.8) * 0.04;
+      const sway = Math.sin(t * 0.3) * 0.015;
+      const chest = currentVrm.humanoid.getNormalizedBoneNode('chest');
+      const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
+      const head = currentVrm.humanoid.getNormalizedBoneNode('head');
+      if (chest) { chest.rotation.x = breath; chest.rotation.z = Math.sin(t * 0.25) * 0.005; }
+      if (spine) { spine.rotation.x = breath * 0.6; spine.rotation.z = sway; }
+      if (head) { head.rotation.x = Math.sin(t * 0.5) * 0.02; head.rotation.z = Math.sin(t * 0.4) * 0.01; }
+    }
+
+    // ── Expression blending (smooth lerp) ──
+    if (currentVrm.expressionManager) {
+      const exprNames = currentVrm.expressionManager.expressions.map(e => e.expressionName);
+      for (const name of exprNames) {
+        if (name === 'blink') continue; // blink handled separately
+        const target = targetExpressions[name] || 0;
+        const current = currentExpressions[name] || 0;
+        const next = current + (target - current) * Math.min(1, delta * EXPRESSION_LERP_SPEED);
+        currentExpressions[name] = next < 0.01 && target === 0 ? 0 : next;
+        currentVrm.expressionManager.setValue(name, currentExpressions[name]);
+      }
+
+      // Blink (overlay on top of any expression)
+      const t = clock.getElapsedTime();
+      if (t >= blinkEndTime && t >= nextBlinkTime) {
+        currentVrm.expressionManager.setValue('blink', 1.0);
+        blinkEndTime = t + 0.15;
+        nextBlinkTime = t + 2 + Math.random() * 4;
+      } else if (t >= blinkEndTime) {
+        currentVrm.expressionManager.setValue('blink', 0);
+      }
+
+      // Lip sync — drive mouth shapes from TTS audio frequency
+      const mouth = getLipSyncValues();
+      const mouthShapes = ['aa', 'ih', 'ou', 'ee', 'oh'];
+      const hasMouth = mouthShapes.some(s => mouth[s] > 0);
+      for (const s of mouthShapes) {
+        if (hasMouth) {
+          currentVrm.expressionManager.setValue(s, mouth[s]);
+        } else if (!targetExpressions[s]) {
+          currentVrm.expressionManager.setValue(s, 0);
+        }
+      }
+    }
+
+    // ── Mouse head tracking with lookAtWeight ──
+    if (currentVrm.lookAt) {
+      if (animController && animController.entries.has(animController.current)) {
+        currentLookAtWeight = animController.entries.get(animController.current).lookAtWeight ?? 1.0;
+      }
+      smoothLookAt.lerp(mouseTarget, Math.min(1, delta * 4.0));
+      _finalLookAt.lerpVectors(DEFAULT_LOOK, smoothLookAt, currentLookAtWeight);
+      currentVrm.lookAt.lookAt(_finalLookAt);
+    }
+
+    if (currentVrm.expressionManager) currentVrm.expressionManager.update();
+    currentVrm.update(delta);
+
+    // ── Idle variety timer ──
+    if (isInIdleState && animController) {
+      idleVariantTimer += delta;
+      if (idleVariantTimer >= nextIdleSwitch) {
+        const pick = pickWeightedIdle();
+        if (animController.actions.has(pick)) animController.play(pick);
+        idleVariantTimer = 0;
+        nextIdleSwitch = 15 + Math.random() * 15;
+      }
+    }
+
+    // ── Particles ──
+    updateParticles(delta);
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ── Expressions & Emotion-to-Animation ─────────────────────────────
+const emotionToExpression = {
+  happy: 'happy', sad: 'sad', angry: 'angry',
+  surprised: 'surprised', relaxed: 'relaxed', neutral: 'neutral',
+  horny: 'happy'
+};
+
+const emotionToAnim = {
+  happy: 'happy_dance', surprised: 'surprised', neutral: 'idle',
+  sad: 'sad', angry: 'angry', relaxed: 'idle',
+  thinking: 'think', horny: 'blowkiss'
+};
+
+function setMouthShape(shapeId, weight = 1.0, duration = 2000) {
+  const mouthShapes = ['aa', 'ih', 'ou', 'ee', 'oh'];
+  for (const s of mouthShapes) {
+    targetExpressions[s] = (s === shapeId) ? weight : 0;
+  }
+  if (duration > 0) {
+    setTimeout(() => {
+      for (const s of mouthShapes) { targetExpressions[s] = 0; }
+    }, duration);
+  }
+}
+
+function setEmotion(emotion) {
+  console.log('[setEmotion]', emotion, 'vrm:', !!currentVrm, 'exprMgr:', !!(currentVrm && currentVrm.expressionManager));
+  if (!currentVrm || !currentVrm.expressionManager) return;
+  // Set target expressions for smooth blending
+  const newTargets = {};
+  const name = emotionToExpression[emotion] || 'neutral';
+  if (name !== 'neutral') newTargets[name] = 1.0;
+  targetExpressions = newTargets;
+
+  // Play matching animation (with fallback to idle)
+  if (animController) {
+    let anim = emotionToAnim[emotion] || 'idle';
+    if (!animController.actions.has(anim)) anim = 'idle';
+    animController.play(anim);
+    isInIdleState = IDLE_VARIANTS.some(v => v.id === anim);
+    if (!isInIdleState) idleVariantTimer = 0;
+  }
+}
+
+initScene();
+animate();
+
+// ── Mouse/Touch Event Listeners ─────────────────────────────────────
+renderer.domElement.addEventListener('mousemove', (e) => {
+  mouseTarget.copy(screenToLookTarget(e.clientX, e.clientY));
+});
+renderer.domElement.addEventListener('mouseleave', () => {
+  mouseTarget.copy(DEFAULT_LOOK);
+});
+renderer.domElement.addEventListener('touchmove', (e) => {
+  if (e.touches.length > 0) {
+    mouseTarget.copy(screenToLookTarget(e.touches[0].clientX, e.touches[0].clientY));
+  }
+}, { passive: true });
+renderer.domElement.addEventListener('touchend', () => {
+  mouseTarget.copy(DEFAULT_LOOK);
+}, { passive: true });
+
+// ── Click/Poke Detection (distinguish from drag) ────────────────────
+renderer.domElement.addEventListener('mousedown', (e) => {
+  mouseDownPos = { x: e.clientX, y: e.clientY };
+});
+renderer.domElement.addEventListener('mouseup', (e) => {
+  if (mouseDownPos && Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y) < 5) {
+    handlePoke(e.clientX, e.clientY);
+  }
+  mouseDownPos = null;
+});
+renderer.domElement.addEventListener('touchstart', (e) => {
+  if (e.touches.length > 0) mouseDownPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, { passive: true });
+renderer.domElement.addEventListener('touchend', (e) => {
+  if (mouseDownPos && e.changedTouches.length > 0) {
+    const t = e.changedTouches[0];
+    if (Math.hypot(t.clientX - mouseDownPos.x, t.clientY - mouseDownPos.y) < 10) {
+      handlePoke(t.clientX, t.clientY);
+    }
+  }
+  mouseDownPos = null;
+}, { passive: true });
+
+// ── Load model (remember last choice) ───────────────────────────────
+const savedVrmPath = localStorage.getItem('ai-wife-vrm-model');
+loadModel(savedVrmPath || './static/models/character.vrm');
+
+// Scene selector
+const sceneSelector = document.getElementById('scene-selector');
+const savedSceneVal = localStorage.getItem('ai-wife-scene') || 'home';
+sceneSelector.value = savedSceneVal;
+sceneSelector.addEventListener('change', () => {
+  applySceneTheme(sceneSelector.value);
+});
+
+// ── Core Utils ───────────────────────────────────────────────────────
+function uuidv4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+const CLIENT_ID = uuidv4();
+
+// ── TTS Toggle (UI wiring — audio state lives in js/audio.js) ───────
+const ttsToggleBtn = document.getElementById('tts-toggle');
+ttsToggleBtn.className = isTtsEnabled() ? 'on' : '';
+ttsToggleBtn.textContent = isTtsEnabled() ? '🔊' : '🔇';
+ttsToggleBtn.onclick = () => {
+  setTtsEnabled(!isTtsEnabled());
+  ttsToggleBtn.className = isTtsEnabled() ? 'on' : '';
+  ttsToggleBtn.textContent = isTtsEnabled() ? '🔊' : '🔇';
+  if (!isTtsEnabled()) { stopTTS(); }
+};
+
+// Fallback provider toggle (uncensored mode)
+let useFallback = localStorage.getItem('ai-wife-fallback') === 'on';
+const fallbackToggleBtn = document.getElementById('fallback-toggle');
+fallbackToggleBtn.className = useFallback ? 'on' : '';
+fallbackToggleBtn.textContent = useFallback ? '🔓' : '🔒';
+fallbackToggleBtn.onclick = () => {
+  useFallback = !useFallback;
+  localStorage.setItem('ai-wife-fallback', useFallback ? 'on' : 'off');
+  fallbackToggleBtn.className = useFallback ? 'on' : '';
+  fallbackToggleBtn.textContent = useFallback ? '🔓' : '🔒';
+};
+
+// Deep thinking toggle (unlock token limit)
+let deepThinking = localStorage.getItem('ai-wife-deep-thinking') === 'on';
+const deepThinkingBtn = document.getElementById('deep-thinking-toggle');
+deepThinkingBtn.className = deepThinking ? 'on' : '';
+deepThinkingBtn.onclick = () => {
+  deepThinking = !deepThinking;
+  localStorage.setItem('ai-wife-deep-thinking', deepThinking ? 'on' : 'off');
+  deepThinkingBtn.className = deepThinking ? 'on' : '';
+  showToast(deepThinking ? '🧠 深度思考已開啟' : '🧠 深度思考已關閉');
+};
+
+// TTS playback mode toggle (streaming vs batch)
+let ttsBatchMode = localStorage.getItem('ai-wife-tts-batch') === 'on';
+const ttsModeToggleBtn = document.getElementById('tts-mode-toggle');
+ttsModeToggleBtn.className = ttsBatchMode ? 'on' : '';
+ttsModeToggleBtn.textContent = ttsBatchMode ? '🎬' : '⚡';
+ttsModeToggleBtn.title = ttsBatchMode ? '完整播放模式 (點擊切換為串流)' : '串流播放模式 (點擊切換為完整)';
+ttsModeToggleBtn.onclick = () => {
+  ttsBatchMode = !ttsBatchMode;
+  localStorage.setItem('ai-wife-tts-batch', ttsBatchMode ? 'on' : 'off');
+  ttsModeToggleBtn.className = ttsBatchMode ? 'on' : '';
+  ttsModeToggleBtn.textContent = ttsBatchMode ? '🎬' : '⚡';
+  ttsModeToggleBtn.title = ttsBatchMode ? '完整播放模式 (點擊切換為串流)' : '串流播放模式 (點擊切換為完整)';
+};
+
+// ── UI Elements, SSE, STT → extracted to js/chat.js ─────────────────
+
+// ── Settings (extracted to js/settings.js) ──────────────────────────
+initSettings({
+  animController,
+  currentVrm,
+  scene,
+  camera,
+  controls,
+  renderer,
+  ambientLight,
+  dirLight,
+  loadModel,
+  applySceneTheme,
+  currentSceneTheme,
+  sceneAudioSwitcher,
+  langSel,
+  savedVrmPath: savedVrmPath || '',
+  isInIdleState,
+  setEmotion,
+  setMouthShape,
+});
+
+// Keep settings module in sync when the main module reassigns shared state.
+// After loadModel rebuilds animController / currentVrm, push updates:
+document.addEventListener('settings:reload-animations', async () => {
+  if (currentVrm) {
+    try {
+      const regRes = await fetch('./static/animations/registry.json');
+      const entries = await regRes.json();
+      animController = new AnimController(currentVrm);
+      await animController.loadAll(entries);
+      animController.play('idle');
+      updateCtx({ animController, currentVrm });
+    } catch (e) { console.warn('Animation reload failed:', e); }
+  }
+});
+
+// ── Lightbox ─────────────────────────────────────────────────────────
+const lightbox = document.getElementById('lightbox');
+const lbImg = document.getElementById('lightbox-img');
+const lbRichtext = document.getElementById('lightbox-richtext');
+const lbNav = document.getElementById('lightbox-nav');
+var lbItems = [];
+var lbIndex = 0;
+
+function openLightbox(items, index) {
+  lbItems = items; lbIndex = index || 0;
+  showLightboxItem();
+  lightbox.classList.add('open');
+}
+function showLightboxItem() {
+  const item = lbItems[lbIndex];
+  lbImg.style.display = 'none';
+  lbRichtext.style.display = 'none';
+  lbRichtext.textContent = '';
+  // Remove any previous video/iframe
+  lightbox.querySelectorAll('.lb-video').forEach(el => el.remove());
+
+  if (item.type === 'image') {
+    lbImg.src = item.url;
+    lbImg.style.display = 'block';
+    lbImg.style.transform = 'scale(1)';
+  } else if (item.type === 'video') {
+    const vid = document.createElement('video');
+    vid.className = 'lb-video';
+    vid.src = item.url;
+    vid.controls = true;
+    vid.autoplay = true;
+    vid.style.cssText = 'max-width:90%;max-height:90%;border-radius:8px;';
+    lightbox.insertBefore(vid, lbNav);
+  } else if (item.type === 'iframe') {
+    const iframe = document.createElement('iframe');
+    iframe.className = 'lb-video';
+    iframe.src = item.url;
+    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+    iframe.allowFullscreen = true;
+    iframe.style.cssText = 'width:80vw;height:70vh;max-width:1200px;border:none;border-radius:8px;';
+    lightbox.insertBefore(iframe, lbNav);
+  } else if (item.type === 'richtext') {
+    if (item.html && item.html.includes('<')) {
+      const iframe = document.createElement('iframe');
+      iframe.sandbox = 'allow-same-origin';
+      iframe.style.cssText = 'width:100%;height:80vh;border:none;background:white;border-radius:8px;';
+      lbRichtext.appendChild(iframe);
+      iframe.srcdoc = item.html;
+    } else {
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'white-space:pre-wrap;';
+      pre.textContent = item.html || '';
+      lbRichtext.appendChild(pre);
+    }
+    lbRichtext.style.display = 'block';
+  }
+  lbNav.textContent = lbItems.length > 1 ? (lbIndex+1)+' / '+lbItems.length : '';
+  document.getElementById('lb-prev').style.display = lbItems.length > 1 ? 'block' : 'none';
+  document.getElementById('lb-next').style.display = lbItems.length > 1 ? 'block' : 'none';
+}
+document.getElementById('lightbox-close').onclick = () => lightbox.classList.remove('open');
+lightbox.onclick = (e) => { if (e.target === lightbox) lightbox.classList.remove('open'); };
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') lightbox.classList.remove('open'); });
+document.getElementById('lb-prev').onclick = (e) => { e.stopPropagation(); lbIndex = (lbIndex-1+lbItems.length)%lbItems.length; showLightboxItem(); };
+document.getElementById('lb-next').onclick = (e) => { e.stopPropagation(); lbIndex = (lbIndex+1)%lbItems.length; showLightboxItem(); };
+lbImg.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const cur = parseFloat(lbImg.style.transform.replace('scale(','').replace(')','') || '1');
+  const ns = Math.max(0.5, Math.min(5, cur + (e.deltaY > 0 ? -0.1 : 0.1)));
+  lbImg.style.transform = 'scale('+ns+')';
+});
+
+// ── Chat (extracted to js/chat.js) ──────────────────────────────────
+initChat({
+  getAnimController: () => animController,
+  getCurrentVrm:     () => currentVrm,
+  getUseFallback:    () => useFallback,
+  getDeepThinking:   () => deepThinking,
+  getTtsBatchMode:   () => ttsBatchMode,
+  triggerEmotionBgm,
+  getSceneTheme:     () => currentSceneTheme,
+  setEmotion,
+  openLightbox,
+  CLIENT_ID,
+});
+</script>
+</body>
+</html>
