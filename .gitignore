@@ -70,7 +70,6 @@ logs/
 .mcp.json
 
 # Dev-only / private files
-CLAUDE.md
 config/server_config.yaml
 !config/server_config.example.yaml
 server/Modelfile
